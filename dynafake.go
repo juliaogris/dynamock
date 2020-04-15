@@ -1,7 +1,10 @@
-// Package dynafake contains a file-based dynamoDB fake and utilities.
-// DB implements the dynamodbiface.DynamoDBAPI interface
-// https://pkg.go.dev/github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface
-// It is useful for testing, local development and execution.
+// Package dynafake provides a file-based dynamoDB fake called DB.
+//
+// DB implements the dynamodbiface.DynamoDBAPI interface.
+// Use it for testing, local development and execution.
+// Dynamodb docs:
+//   https://pkg.go.dev/github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface
+//   https://pkg.go.dev/github.com/aws/aws-sdk-go/service/dynamodb
 package dynafake
 
 import "github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
