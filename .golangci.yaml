@@ -24,7 +24,6 @@ linters:
     - govet
     - ineffassign
     - interfacer
-    - lll
     - maligned
     - misspell
     - nakedret
@@ -40,4 +39,4 @@ linters:
     - unused
     - varcheck
     - whitespace
-# disabled: gomnd wsl
+# disabled: gomnd lll wsl
