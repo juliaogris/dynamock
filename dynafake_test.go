@@ -12,6 +12,7 @@ import (
 func TestDynamoDBAPI(t *testing.T) {
 	iface := (*dynamodbiface.DynamoDBAPI)(nil)
 	require.Implements(t, iface, NewDB())
+	require.Implements(t, iface, &UnimplementedDB{})
 }
 
 func requireErrUnimpl(t *testing.T, err error) {
