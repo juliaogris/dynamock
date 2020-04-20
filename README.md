@@ -1,4 +1,4 @@
-# Dynafake
+# Dynamock
 
 ![CI](https://github.com/foxygoat/dynamock/workflows/ci/badge.svg?branch=master)
 [![Godoc](https://img.shields.io/badge/godoc-ref-blue)](https://pkg.go.dev/foxygo.at/dynamock)

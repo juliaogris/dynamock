@@ -5,15 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
 	"github.com/stretchr/testify/require"
 )
-
-func TestDynamoDBAPI(t *testing.T) {
-	iface := (*dynamodbiface.DynamoDBAPI)(nil)
-	require.Implements(t, iface, NewDB())
-	require.Implements(t, iface, &UnimplementedDB{})
-}
 
 func requireErrUnimpl(t *testing.T, err error) {
 	t.Helper()
@@ -22,7 +15,7 @@ func requireErrUnimpl(t *testing.T, err error) {
 }
 
 func TestUnimplmented(t *testing.T) { //nolint:funlen
-	db := DB{}
+	db := UnimplementedDB{}
 	ctx := context.Background()
 	var r, o interface{}
 
