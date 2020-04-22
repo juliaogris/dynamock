@@ -2,7 +2,7 @@
 
 ![CI](https://github.com/foxygoat/dynafake/workflows/ci/badge.svg?branch=master)
 [![Godoc](https://img.shields.io/badge/godoc-ref-blue)](https://pkg.go.dev/foxygo.at/dynafake)
-[![Slack chat](https://img.shields.io/badge/slack-gophers-795679?logo=slack)](https://app.slack.com/client/T029RQSE6/C011LKH21HC)
+[![Slack chat](https://img.shields.io/badge/slack-gophers-795679?logo=slack)](https://gophers.slack.com/app_redirect?channel=foxygoat)
 
 File-based
 [DynamoDB](https://pkg.go.dev/github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface)
