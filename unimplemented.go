@@ -1,4 +1,4 @@
-package dynafake
+package dynamock
 
 import (
 	"fmt"

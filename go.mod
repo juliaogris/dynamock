@@ -1,4 +1,4 @@
-module foxygo.at/dynafake
+module foxygo.at/dynamock
 
 go 1.14
 
