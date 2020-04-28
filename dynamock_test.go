@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
 	"github.com/stretchr/testify/require"
 )
@@ -74,12 +73,13 @@ func TestDBFromReader(t *testing.T) {
 	wantS := KeyDef{
 		Name:         "phoneGSI",
 		PartitionKey: KeyPartDef{Name: "phone", Type: "string"},
+		SortKey:      &KeyPartDef{Name: "name", Type: "string"},
 	}
 	gotS := pt.Schema.GSIs[1]
 	require.Equal(t, wantS, gotS)
 
 	// second table data
-	require.Equal(t, 7, len(pt.items))
+	require.Equal(t, 9, len(pt.items))
 }
 
 func TestDBFromReaderJSONErr(t *testing.T) {
@@ -96,6 +96,26 @@ func TestDBFromReaderValidateErr(t *testing.T) {
 	require.True(t, errors.Is(err, ErrMissingName))
 }
 
+func TestDBFromReaderDuplicateErr(t *testing.T) {
+	r := strings.NewReader(`{"tables" : [
+		{
+			"name": "product",
+			"schema": {
+				"primaryKey": {
+					"partitionKey": { "name": "id", "type": "string" }
+				}
+			},
+			"items": [
+				{ "id": "1", "name": "red pen", "price": 11 },
+				{ "id": "1", "name": "blue pen", "price": 22 }
+			]
+		}
+	 ] }`)
+	_, err := NewDBFromReader(r)
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrDuplicate))
+}
+
 func TestGetItem(t *testing.T) { //nolint:funlen
 	db := DB{}
 	ctx := context.Background()
@@ -107,34 +127,15 @@ func TestGetItem(t *testing.T) { //nolint:funlen
 	requireErrUnimpl(t, err)
 }
 
-func TestCovertRawItemsNoErr(t *testing.T) {
-	tbl := Table{
-		RawItems: []map[string]interface{}{
-			{"id": make(chan int)},
-		},
-	}
-	err := tbl.covertRawItems()
-	// Should be an error imo, but dynamo silently ignores
-	// types it cannot marshal. I couldn't work out how to make
-	// it error.
-	require.NoError(t, err)
-}
+func TestWriteDBSnap(t *testing.T) {
+	db := ReadTestdataDB(t, "db.json")
 
-func TestCovertRawItemsErr(t *testing.T) {
-	names := struct {
-		Names []*string `dynamodbav:",stringset"`
-	}{
-		Names: []*string{nil}, // nil value in stringset causes InvalidMarshalError
-	}
-	tbl := Table{
-		RawItems: []map[string]interface{}{
-			{"names": names},
-		},
-	}
-	err := tbl.covertRawItems()
-	require.Error(t, err)
-	errInv := &dynamodbattribute.InvalidMarshalError{}
-	require.True(t, errors.As(err, &errInv))
+	sb := &bytes.Buffer{}
+	err := db.WriteSnap(sb)
+	require.NoError(t, err)
+
+	want := string(ReadTestdataBytes(t, "db.json"))
+	require.JSONEq(t, want, sb.String())
 }
 
 func ReadTestdataBytes(t *testing.T, filename string) []byte {
@@ -156,35 +157,4 @@ func ReadTestdataDB(t *testing.T, filename string) *DB {
 	require.NoError(t, err)
 	require.NotNil(t, db)
 	return db
-}
-
-func TestWriteDBSnap(t *testing.T) {
-	db := ReadTestdataDB(t, "db.json")
-
-	sb := &bytes.Buffer{}
-	err := db.WriteSnap(sb)
-	require.NoError(t, err)
-
-	want := string(ReadTestdataBytes(t, "db.json"))
-	require.JSONEq(t, want, sb.String())
-}
-
-func TestWriteTableSnap(t *testing.T) {
-	db := ReadTestdataDB(t, "db.json")
-
-	productTable := db.tables["product"]
-	require.NotNil(t, productTable)
-
-	sb := &bytes.Buffer{}
-	cols := []string{"id", "price"}
-	err := productTable.WriteSnap(sb, cols)
-	require.NoError(t, err)
-	want := `
-  id, price
-   1,    11
-   2,    22
-   3,    33
-1234,  1234
-`[1:]
-	require.Equal(t, want, sb.String())
 }

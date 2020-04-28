@@ -10,7 +10,7 @@ clean::  ## Remove generated files
 # -- Test ---------------------------------------------------------------------
 
 COVERFILE = coverage.out
-COVERAGE = 98.8
+COVERAGE = 99.0
 
 test:  ## Run tests and generate a coverage file
 	go test -coverprofile=$(COVERFILE) ./...

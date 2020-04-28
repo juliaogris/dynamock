@@ -97,11 +97,6 @@ func TestValidateAttrKeyTypeErr(t *testing.T) {
 	require.True(t, errors.Is(err, ErrMissingType), err)
 }
 
-func TestValidateAttrKeyTypeBinary(t *testing.T) {
-	err := validateAttrKeyType(&dynamodb.AttributeValue{B: []byte{}}, "binary")
-	require.NoError(t, err)
-}
-
 func TestValidateKey(t *testing.T) {
 	key := idDef()
 	item := Item{}

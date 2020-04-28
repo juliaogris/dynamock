@@ -72,11 +72,11 @@ func validateItem(item Item, schema *Schema) error {
 	if err := validateKey(item, schema.PrimaryKey); err != nil {
 		return errs.New(ErrPrimaryKeyVal, err)
 	}
-	for _, gsiKey := range schema.GSIs {
-		if !hasKey(item, gsiKey) {
+	for _, gsi := range schema.GSIs {
+		if !hasKey(item, gsi) {
 			continue
 		}
-		if err := validateKey(item, gsiKey); err != nil {
+		if err := validateKey(item, gsi); err != nil {
 			return errs.New(ErrGSIVal, err)
 		}
 	}
@@ -109,7 +109,7 @@ func validateKey(item Item, k KeyDef) error {
 
 func validateKeyType(typeStr string) error {
 	switch typeStr {
-	case "string", "number", "binary":
+	case "string", "number":
 		return nil
 	}
 	return errs.Errorf("%V: validateKeyType: %s", ErrUnknownType, typeStr)
@@ -123,8 +123,6 @@ func validateAttrKeyType(attr *dynamodb.AttributeValue, attrType string) error {
 	case attrType == "string" && attr.S != nil:
 		return nil
 	case attrType == "number" && attr.N != nil:
-		return nil
-	case attrType == "binary" && attr.B != nil:
 		return nil
 	}
 	return errs.Errorf("%v: no %s in attribute %+v", ErrMissingType, attrType, attr)

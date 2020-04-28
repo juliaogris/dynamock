@@ -9,10 +9,7 @@ package dynamock
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
-	"strconv"
-	"strings"
 
 	"foxygo.at/s/errs"
 	"github.com/aws/aws-sdk-go/aws"
@@ -20,90 +17,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 )
-
-type Table struct {
-	Name     string    `json:"name"`
-	Schema   Schema    `json:"schema"`
-	RawItems []RawItem `json:"items"`
-
-	items []Item
-	// byPrimaryKey      map[string]map[string]Item   // lookup of Primary key by partition and sort key
-	// byGSIKey          map[string]map[string][]Item // lookup of globalSecondaryIndex by index name and partition key, sorted by sortKey
-	// byGSIPartitionKey map[string]map[string][]Item // lookup of globalSecondaryIndex by index name and partition key, sorted by sortKey
-}
-
-type RawItem = map[string]interface{} // *dynamodb.AttributeValue
-type Item = map[string]*dynamodb.AttributeValue
-
-type Schema struct {
-	PrimaryKey KeyDef   `json:"primaryKey"`
-	GSIs       []KeyDef `json:"globalSecondaryIndex,omitempty"`
-}
-
-type KeyDef struct {
-	Name         string      `json:"name,omitempty"`
-	PartitionKey KeyPartDef  `json:"partitionKey"`
-	SortKey      *KeyPartDef `json:"sortKey,omitempty"`
-}
-
-type KeyPartDef struct {
-	Name string `json:"name"`
-	Type string `json:"type"` // string, number, binary
-}
-
-func (t *Table) covertRawItems() error {
-	t.items = make([]map[string]*dynamodb.AttributeValue, len(t.RawItems))
-	for i, rawItem := range t.RawItems {
-		item, err := dynamodbattribute.MarshalMap(rawItem)
-		if err != nil {
-			return errs.Errorf("covertRawItems: table %s marshalMap: %v", t.Name, err)
-		}
-		t.items[i] = item
-	}
-	return nil
-}
-
-func (t *Table) WriteSnap(w io.Writer, cols []string) error {
-	if err := dynamodbattribute.UnmarshalListOfMaps(t.items, &t.RawItems); err != nil {
-		return err
-	}
-	format := t.rowFormat(cols)
-	row := make([]interface{}, len(cols))
-	untypedCols := make([]interface{}, len(cols))
-	for i, c := range cols {
-		untypedCols[i] = c
-	}
-	fmt.Fprintf(w, format, untypedCols...)
-	for _, rawItem := range t.RawItems {
-		for i, col := range cols {
-			row[i] = rawItem[col]
-		}
-		fmt.Fprintf(w, format, row...)
-	}
-	return nil
-}
-
-// Derived from rawItems!!
-func (t *Table) rowFormat(cols []string) string {
-	pads := make([]int, len(cols))
-	for i, c := range cols {
-		pads[i] = len(c)
-	}
-	for _, item := range t.RawItems {
-		for i, c := range cols {
-			attr := item[c]
-			l := len(fmt.Sprint(attr))
-			if l > pads[i] {
-				pads[i] = l
-			}
-		}
-	}
-	formats := make([]string, len(cols))
-	for i, pad := range pads {
-		formats[i] = `%` + strconv.Itoa(pad) + `v`
-	}
-	return strings.Join(formats, ", ") + "\n"
-}
 
 // DB implements the dynamodbiface.DynamoDBAPI interface
 type DB struct {
@@ -134,14 +47,19 @@ func NewDBFromReader(r io.Reader) (*DB, error) {
 	for _, t := range db.RawTables {
 		db.tables[t.Name] = t
 	}
-	db.index()
+	if err := db.index(); err != nil {
+		return nil, err
+	}
 	return db, nil
 }
 
-func (db *DB) index() {
-	//for _, table := range db.Tables {
-	//fmt.Println(item)
-	//}
+func (db *DB) index() error {
+	for _, table := range db.tables {
+		if err := table.index(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (db *DB) WriteSnap(w io.Writer) error {

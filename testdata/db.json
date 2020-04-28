@@ -40,18 +40,24 @@
 						"partitionKey": {
 							"name": "phone",
 							"type": "string"
+						},
+						"sortKey": {
+							"name": "name",
+							"type": "string"
 						}
 					}
 				]
 			},
 			"items": [
+				{ "id": 0, "name": "Jon", "phone": "000", "age": 0 },
 				{ "id": 1, "name": "Jon", "phone": "111", "age": 11 },
 				{ "id": 2, "name": "Tom", "phone": "222", "age": 22 },
 				{ "id": 3, "name": "Bee", "phone": "333", "age": 33 },
 				{ "id": 4, "name": "Jen", "phone": "444", "age": 44 },
-				{ "id": 5, "name": "Jen", "phone": "555", "age": 15 },
+				{ "id": 5, "name": "Jen", "phone": "555" },
 				{ "id": 6, "name": "No-phone", "age": 1 },
-				{ "id": 7, "name": "No-age", "phone": "777" }
+				{ "id": 7, "name": "No-age", "phone": "777" },
+				{ "id": 8, "name": "Jen", "phone": "222", "age": 15 }
 			]
 		}
 	]
