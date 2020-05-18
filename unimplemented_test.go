@@ -2,7 +2,6 @@ package dynamock
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -10,8 +9,7 @@ import (
 
 func requireErrUnimpl(t *testing.T, err error) {
 	t.Helper()
-	require.Error(t, err)
-	require.True(t, errors.Is(err, ErrUnimpl))
+	requireErrIs(t, err, ErrUnimpl)
 }
 
 func TestUnimplmented(t *testing.T) { //nolint:funlen

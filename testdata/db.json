@@ -59,6 +59,19 @@
 				{ "id": 7, "name": "No-age", "phone": "777" },
 				{ "id": 8, "name": "Jen", "phone": "222", "age": 15 }
 			]
+		},
+		{
+			"name": "path",
+			"schema": {
+				"primaryKey": {
+					"partitionKey": { "name": "folder", "type": "string" },
+					"sortKey": { "name": "file", "type": "string" }
+				}
+			},
+			"items": [
+				{ "folder": "/Users/dev/", "file": "todo.txt", "perms": "-rw-r--r--" },
+				{ "folder": "/Users/dev/", "file": "Makefile", "perms": "-rw-r--r--" }
+			]
 		}
 	]
 }

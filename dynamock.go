@@ -73,10 +73,26 @@ func (db *DB) WriteSnap(w io.Writer) error {
 	return e.Encode(db)
 }
 
-func (db *DB) GetItem(_ *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
-	return nil, ErrUnimpl
+func (db *DB) GetItem(in *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
+	if in == nil {
+		return nil, errs.Errorf("%v: GetItemInput", ErrNil)
+	}
+	if err := validateTableName(db, in.TableName); err != nil {
+		return nil, err
+	}
+	table := db.tables[*in.TableName]
+	k, err := getKeyVals(in.Key, table.Schema.PrimaryKey)
+	if err != nil {
+		return nil, err
+	}
+	out := &dynamodb.GetItemOutput{}
+	if table.byPrimary[k.PartitionKey] == nil {
+		return out, nil
+	}
+	out.Item = table.byPrimary[k.PartitionKey][k.SortKey]
+	return out, nil
 }
 
-func (db *DB) GetItemWithContext(_ aws.Context, _ *dynamodb.GetItemInput, _ ...request.Option) (*dynamodb.GetItemOutput, error) {
-	return nil, ErrUnimpl
+func (db *DB) GetItemWithContext(_ aws.Context, in *dynamodb.GetItemInput, _ ...request.Option) (*dynamodb.GetItemOutput, error) {
+	return db.GetItem(in)
 }

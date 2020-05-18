@@ -16,6 +16,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func requireErrIs(t *testing.T, err, target error) {
+	t.Helper()
+	require.Error(t, err)
+	require.Error(t, target)
+	require.Truef(t, errors.Is(err, target), "expected err '%v' to be '%v'", err, target)
+}
+
 func TestDynamoDBAPI(t *testing.T) {
 	iface := (*dynamodbiface.DynamoDBAPI)(nil)
 	require.Implements(t, iface, NewDB())
@@ -41,7 +48,7 @@ func TestDBFromReader(t *testing.T) {
 	require.NotNil(t, db)
 
 	// first table schema
-	require.Equal(t, 2, len(db.RawTables))
+	require.Equal(t, 3, len(db.RawTables))
 	pt := db.RawTables[0]
 	require.Equal(t, "product", pt.Name)
 	pk := pt.Schema.PrimaryKey.PartitionKey
@@ -116,15 +123,146 @@ func TestDBFromReaderDuplicateErr(t *testing.T) {
 	require.True(t, errors.Is(err, ErrDuplicate))
 }
 
-func TestGetItem(t *testing.T) { //nolint:funlen
-	db := DB{}
-	ctx := context.Background()
+func TestGetItem(t *testing.T) {
+	db := ReadTestdataDB(t, "db.json")
 
+	testCases := map[string]struct {
+		in   *dynamodb.GetItemInput
+		want string
+	}{
+		"string_key": {
+			in: &dynamodb.GetItemInput{
+				TableName: strPtr("product"),
+				Key:       Item{"id": {S: strPtr("1")}},
+			},
+			want: `{ "id": "1", "name": "red pen", "price": 11 }`,
+		},
+		"numeric_key": {
+			in: &dynamodb.GetItemInput{
+				TableName: strPtr("product"),
+				Key:       Item{"id": {S: strPtr("1")}},
+			},
+			want: `{ "id": "1", "name": "red pen", "price": 11 }`,
+		},
+		"composite_key": {
+			in: &dynamodb.GetItemInput{
+				TableName: strPtr("path"),
+				Key: Item{
+					"folder": {S: strPtr("/Users/dev/")},
+					"file":   {S: strPtr("todo.txt")},
+				},
+			},
+			want: `{ "folder": "/Users/dev/", "file": "todo.txt", "perms": "-rw-r--r--" }`,
+		},
+	}
+
+	for name, tc := range testCases {
+		name, tc := name, tc
+		t.Run(name, func(t *testing.T) {
+			out, err := db.GetItem(tc.in)
+			require.NoError(t, err)
+			require.NotNil(t, out)
+			require.NotNil(t, out.Item)
+			require.JSONEq(t, tc.want, ItemToJSON(out.Item))
+
+			out, err = db.GetItemWithContext(context.Background(), tc.in)
+			require.NoError(t, err)
+			require.JSONEq(t, tc.want, ItemToJSON(out.Item))
+		})
+	}
+}
+
+func TestGetNoItem(t *testing.T) {
+	db := ReadTestdataDB(t, "db.json")
+	in := &dynamodb.GetItemInput{
+		TableName: strPtr("product"),
+		Key:       Item{"id": {S: strPtr("-1")}},
+	}
+	out, err := db.GetItem(in)
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	require.Nil(t, out.Item)
+}
+
+func TestGetItemNilErr(t *testing.T) {
+	db := ReadTestdataDB(t, "db.json")
 	_, err := db.GetItem(nil)
-	requireErrUnimpl(t, err)
+	requireErrIs(t, err, ErrNil)
+}
 
-	_, err = db.GetItemWithContext(ctx, nil)
-	requireErrUnimpl(t, err)
+func TestGetItemTableNameErr(t *testing.T) {
+	db := ReadTestdataDB(t, "db.json")
+	in := &dynamodb.GetItemInput{
+		TableName: nil,
+	}
+	_, err := db.GetItem(in)
+	requireErrIs(t, err, ErrNil)
+	in = &dynamodb.GetItemInput{
+		TableName: strPtr("bad_table_name"),
+	}
+	_, err = db.GetItem(in)
+	requireErrIs(t, err, ErrUnknownTable)
+}
+
+func TestGetItemKeyErr(t *testing.T) {
+	db := ReadTestdataDB(t, "db.json")
+	in := &dynamodb.GetItemInput{
+		TableName: strPtr("path"),
+		Key: Item{
+			"folderXXX": {S: strPtr("/Users/dev/")},
+		},
+	}
+	_, err := db.GetItem(in)
+	requireErrIs(t, err, ErrMissingAttribute)
+
+	in = &dynamodb.GetItemInput{
+		TableName: strPtr("path"),
+		Key: Item{
+			"folder":   {S: strPtr("/Users/dev/")},
+			"fileXXXX": {S: strPtr("todo.txt")},
+		},
+	}
+	_, err = db.GetItem(in)
+	requireErrIs(t, err, ErrMissingAttribute)
+}
+
+func TestGetKeyVal(t *testing.T) {
+	attr := &dynamodb.AttributeValue{N: strPtr("12")}
+	got, err := getKeyVal(attr, "number")
+	require.NoError(t, err)
+	require.Equal(t, "12", got)
+}
+
+func TestGetKeyValErr(t *testing.T) {
+	attr := &dynamodb.AttributeValue{N: strPtr("12")}
+	_, err := getKeyVal(attr, "string")
+	require.Error(t, err)
+	requireErrIs(t, err, ErrInvalidType)
+
+	attr = &dynamodb.AttributeValue{S: strPtr("abc")}
+	_, err = getKeyVal(attr, "number")
+	require.Error(t, err)
+	requireErrIs(t, err, ErrInvalidType)
+
+	_, err = getKeyVal(attr, "badType")
+	require.Error(t, err)
+	requireErrIs(t, err, ErrInvalidType)
+}
+
+func TestGetKeyValsErr(t *testing.T) {
+	key := Item{}
+	keyDef := KeyDef{PartitionKey: KeyPartDef{Name: "id", Type: "string"}}
+	_, err := getKeyVals(key, keyDef)
+	requireErrIs(t, err, ErrInvalidKey)
+
+	key = Item{
+		"id0": {S: strPtr("0")},
+		"id1": {S: strPtr("1")},
+		"id2": {S: strPtr("2")},
+		"id3": {S: strPtr("3")},
+	}
+	_, err = getKeyVals(key, keyDef)
+	requireErrIs(t, err, ErrInvalidKey)
 }
 
 func TestWriteDBSnap(t *testing.T) {

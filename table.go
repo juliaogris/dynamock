@@ -1,6 +1,7 @@
 package dynamock
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -27,6 +28,13 @@ type Table struct {
 
 type RawItem = map[string]interface{} // as read from file
 type Item = map[string]*dynamodb.AttributeValue
+
+func ItemToJSON(i Item) string {
+	var out interface{}
+	_ = dynamodbattribute.UnmarshalMap(i, &out)
+	b, _ := json.Marshal(out)
+	return string(b)
+}
 
 type Schema struct {
 	PrimaryKey KeyDef   `json:"primaryKey"`
