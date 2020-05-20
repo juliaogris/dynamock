@@ -37,20 +37,20 @@ func TestWriteTableSnap(t *testing.T) {
 	require.Equal(t, want, sb.String())
 }
 
-func TestCovertRawItemsNoErr(t *testing.T) {
+func TestConvertRawItemsNoErr(t *testing.T) {
 	tbl := Table{
 		RawItems: []map[string]interface{}{
 			{"id": make(chan int)},
 		},
 	}
-	err := tbl.covertRawItems()
+	err := tbl.convertRawItems()
 	// Should be an error imo, but dynamo silently ignores
 	// types it cannot marshal. I couldn't work out how to make
 	// it error.
 	require.NoError(t, err)
 }
 
-func TestCovertRawItemsErr(t *testing.T) {
+func TestConvertRawItemsErr(t *testing.T) {
 	names := struct {
 		Names []*string `dynamodbav:",stringset"`
 	}{
@@ -61,7 +61,7 @@ func TestCovertRawItemsErr(t *testing.T) {
 			{"names": names},
 		},
 	}
-	err := tbl.covertRawItems()
+	err := tbl.convertRawItems()
 	require.Error(t, err)
 	errInv := &dynamodbattribute.InvalidMarshalError{}
 	require.True(t, errors.As(err, &errInv))
@@ -132,15 +132,6 @@ func TestIndexPersonTable(t *testing.T) {
 	require.Equal(t, want, got)
 
 	require.Nil(t, phoneGSI["No-phone"])
-}
-
-func TestKeyString(t *testing.T) {
-	require.Equal(t, "", keyString(nil, nil))
-	key := &KeyPartDef{
-		Type: "bad type",
-		Name: "name",
-	}
-	require.Equal(t, "", keyString(itemFixture(), key))
 }
 
 func TestInsertItem(t *testing.T) {

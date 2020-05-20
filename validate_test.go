@@ -35,6 +35,7 @@ func TestValidateDBErr(t *testing.T) {
 func TestValidateTableErr(t *testing.T) {
 	tbl := &Table{Name: "table1"}
 	err := validateTable(tbl)
+
 	require.Error(t, err)
 	require.True(t, errors.Is(err, ErrMissingName))
 }
@@ -50,8 +51,7 @@ func TestValidateTableGSIErr(t *testing.T) {
 		},
 	}
 	err := validateTable(tbl)
-	require.Error(t, err)
-	require.True(t, errors.Is(err, ErrMissingName))
+	requireErrIs(t, err, ErrMissingName)
 }
 
 func TestValidateTableGSITypeErr(t *testing.T) {
@@ -70,8 +70,7 @@ func TestValidateTableGSITypeErr(t *testing.T) {
 		},
 	}
 	err := validateTable(tbl)
-	require.Error(t, err)
-	require.True(t, errors.Is(err, ErrUnknownType), err)
+	requireErrIs(t, err, ErrUnknownType)
 }
 
 func TestValidateTableItemErr(t *testing.T) {
@@ -83,30 +82,26 @@ func TestValidateTableItemErr(t *testing.T) {
 		},
 	}
 	err := validateTable(tbl)
-	require.Error(t, err)
-	require.True(t, errors.Is(err, ErrPrimaryKeyVal), err)
+	requireErrIs(t, err, ErrPrimaryKeyVal)
 }
 
 func TestValidateAttrKeyTypeErr(t *testing.T) {
 	err := validateAttrKeyType(nil, "string")
-	require.Error(t, err)
-	require.True(t, errors.Is(err, ErrMissingAttribute), err)
+	requireErrIs(t, err, ErrMissingAttribute)
 
 	err = validateAttrKeyType(&dynamodb.AttributeValue{}, "bad_type")
-	require.Error(t, err)
-	require.True(t, errors.Is(err, ErrMissingType), err)
+	requireErrIs(t, err, ErrMissingType)
 }
 
 func TestValidateKey(t *testing.T) {
 	key := idDef()
 	item := Item{}
 	err := validateKey(item, key)
-	require.Error(t, err, err)
-	require.True(t, errors.Is(err, ErrMissingAttribute))
+	requireErrIs(t, err, ErrMissingAttribute)
 }
 
 func TestValidateItemGSIErr(t *testing.T) {
-	schema := &Schema{
+	schema := Schema{
 		PrimaryKey: idDef(),
 
 		GSIs: []KeyDef{
@@ -124,5 +119,14 @@ func TestValidateItemGSIErr(t *testing.T) {
 	}
 	err := validateItem(item, schema)
 	require.Error(t, err)
-	require.True(t, errors.Is(err, ErrGSIVal))
+	requireErrIs(t, err, ErrGSIVal)
+}
+
+func TestValidateKeyItemErr(t *testing.T) {
+	err := validateKeyItem(nil, Schema{})
+	requireErrIs(t, err, ErrInvalidKey)
+
+	item := Item{"id1": nil, "id2": nil, "id3": nil}
+	err = validateKeyItem(item, Schema{})
+	requireErrIs(t, err, ErrInvalidKey)
 }

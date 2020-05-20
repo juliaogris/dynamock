@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"foxygo.at/s/errs"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
@@ -17,9 +18,10 @@ import (
 var ErrDuplicate = errors.New("duplicate")
 
 type Table struct {
-	Name     string    `json:"name"`
-	Schema   Schema    `json:"schema"`
-	RawItems []RawItem `json:"items"`
+	sync.RWMutex           // make private.
+	Name         string    `json:"name"`
+	Schema       Schema    `json:"schema"`
+	RawItems     []RawItem `json:"items"`
 
 	items     []Item
 	byPrimary map[string]map[string]Item   // lookup of Primary key by partition and sort key - unique result required.
@@ -52,12 +54,12 @@ type KeyPartDef struct {
 	Type string `json:"type"` // string, number;  binary  not implemented
 }
 
-func (t *Table) covertRawItems() error {
+func (t *Table) convertRawItems() error {
 	t.items = make([]map[string]*dynamodb.AttributeValue, len(t.RawItems))
 	for i, rawItem := range t.RawItems {
 		item, err := dynamodbattribute.MarshalMap(rawItem)
 		if err != nil {
-			return errs.Errorf("covertRawItems: table %s marshalMap: %v", t.Name, err)
+			return errs.Errorf("convertRawItems: table %s marshalMap: %v", t.Name, err)
 		}
 		t.items[i] = item
 	}
@@ -108,24 +110,19 @@ func (t *Table) rowFormat(cols []string) string {
 
 // derived from items, must be set
 func (t *Table) index() error {
-	t.initByMaps()
+	t.byPrimary = map[string]map[string]Item{}
+	if len(t.Schema.GSIs) != 0 {
+		t.byGSI = map[string]map[string][]Item{}
+		for _, gsi := range t.Schema.GSIs {
+			t.byGSI[gsi.Name] = map[string][]Item{}
+		}
+	}
 	for _, item := range t.items {
 		if err := t.indexItem(item); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func (t *Table) initByMaps() {
-	t.byPrimary = map[string]map[string]Item{}
-	if len(t.Schema.GSIs) == 0 {
-		return
-	}
-	t.byGSI = map[string]map[string][]Item{}
-	for _, gsi := range t.Schema.GSIs {
-		t.byGSI[gsi.Name] = map[string][]Item{}
-	}
 }
 
 func (t *Table) indexItem(item Item) error {
@@ -140,15 +137,13 @@ func (t *Table) indexItem(item Item) error {
 
 func (t *Table) indexItemByPrimaryKey(item Item) error {
 	pk := t.Schema.PrimaryKey
-	partKey := keyString(item, &pk.PartitionKey)
-	sortKey := keyString(item, pk.SortKey)
-
-	if t.byPrimary[partKey] == nil {
-		t.byPrimary[partKey] = map[string]Item{}
-	} else if _, ok := t.byPrimary[partKey][sortKey]; ok {
-		return errs.Errorf("%v: %v: partionKey '%s', sortKey: '%s'", ErrDuplicate, ErrPrimaryKeyVal, partKey, sortKey)
+	k, _ := getKeyStrings(item, pk)
+	if t.byPrimary[k.PartitionKey] == nil {
+		t.byPrimary[k.PartitionKey] = map[string]Item{}
+	} else if _, ok := t.byPrimary[k.PartitionKey][k.SortKey]; ok {
+		return errs.Errorf("%v: %v: partionKey '%s', sortKey: '%s'", ErrDuplicate, ErrPrimaryKeyVal, k.PartitionKey, k.SortKey)
 	}
-	t.byPrimary[partKey][sortKey] = item
+	t.byPrimary[k.PartitionKey][k.SortKey] = item
 	return nil
 }
 
@@ -156,9 +151,81 @@ func (t *Table) indexItemByGSI(item Item, gsi KeyDef) {
 	if !hasKey(item, gsi) {
 		return
 	}
-	partKey := keyString(item, &gsi.PartitionKey)
-	items := t.byGSI[gsi.Name][partKey]
-	t.byGSI[gsi.Name][partKey] = insertItem(items, item, gsi.SortKey)
+	k, _ := getKeyStrings(item, gsi)
+	items := t.byGSI[gsi.Name][k.PartitionKey]
+	t.byGSI[gsi.Name][k.PartitionKey] = insertItem(items, item, gsi.SortKey)
+}
+
+func (t *Table) Delete(key Item) (Item, error) {
+	t.Lock()
+	defer t.Unlock()
+	if err := validateKeyItem(key, t.Schema); err != nil {
+		return nil, err
+	}
+	return t.pop(key), nil
+}
+
+func (t *Table) Get(key Item) (Item, error) {
+	t.RLock()
+	defer t.RUnlock()
+	if err := validateKeyItem(key, t.Schema); err != nil {
+		return nil, err
+	}
+	k, err := getKeyStrings(key, t.Schema.PrimaryKey)
+	if err != nil {
+		return nil, err
+	}
+	return t.get(k), nil
+}
+
+func (t *Table) Put(item Item) (Item, error) {
+	t.Lock()
+	defer t.Unlock()
+	if err := validateItem(item, t.Schema); err != nil {
+		return nil, err
+	}
+	old := t.pop(item)
+	t.items = append(t.items, item)
+	_ = t.indexItem(item)
+	return old, nil
+}
+
+func (t *Table) get(k *keyStrings) Item {
+	if t.byPrimary[k.PartitionKey] == nil {
+		return nil
+	}
+	return t.byPrimary[k.PartitionKey][k.SortKey]
+}
+
+// item needs to be validated with ValidateItem
+func (t *Table) pop(key Item) Item {
+	pk := t.Schema.PrimaryKey
+	k, _ := getKeyStrings(key, pk)
+	old := t.get(k)
+	if old == nil {
+		return nil
+	}
+	for _, gsi := range t.Schema.GSIs {
+		if hasKey(old, gsi) {
+			gsiKey, _ := getKeyStrings(old, gsi)
+			items := t.byGSI[gsi.Name][gsiKey.PartitionKey]
+			t.byGSI[gsi.Name][gsiKey.PartitionKey] = t.deleteItemInSlice(items, old, k)
+		}
+	}
+	t.items = t.deleteItemInSlice(t.items, old, k)
+	delete(t.byPrimary[k.PartitionKey], k.SortKey)
+	return old
+}
+
+func (t *Table) deleteItemInSlice(items []Item, delItem Item, delKeys *keyStrings) []Item {
+	pk := t.Schema.PrimaryKey
+	for i, item := range items {
+		k, _ := getKeyStrings(item, pk)
+		if k.PartitionKey == delKeys.PartitionKey && k.SortKey == delKeys.SortKey {
+			return append(items[:i], items[i+1:]...)
+		}
+	}
+	return items
 }
 
 // append if no sortKey provided
@@ -190,15 +257,43 @@ func lessFunc(items []Item, item Item, key *KeyPartDef) func(int) bool {
 	}
 }
 
-func keyString(item Item, key *KeyPartDef) string {
-	if key == nil || item[key.Name] == nil {
-		return ""
+func getKeyString(attr *dynamodb.AttributeValue, attrType string) (string, error) {
+	if attr == nil {
+		return "", errs.New(ErrInvalidKey, ErrNil)
 	}
-	if key.Type == "string" {
-		return *item[key.Name].S
+	switch attrType {
+	case "string":
+		if attr.S == nil {
+			return "", errs.Errorf("%v: %v: %v, expected string", ErrInvalidKey, ErrInvalidType, attr)
+		}
+		return *attr.S, nil
+	case "number":
+		if attr.N == nil {
+			return "", errs.Errorf("%v: %v: %v, expected number", ErrInvalidKey, ErrInvalidType, attr)
+		}
+		return *attr.N, nil
 	}
-	if key.Type == "number" {
-		return *item[key.Name].N
+	return "", errs.Errorf("%v: %v: %s expected 'string' or 'number'", ErrInvalidKey, ErrInvalidType, attr)
+}
+
+type keyStrings struct {
+	PartitionKey string
+	SortKey      string
+}
+
+func getKeyStrings(item Item, keyDef KeyDef) (*keyStrings, error) {
+	partKey := keyDef.PartitionKey
+	partKeyVal, err := getKeyString(item[partKey.Name], partKey.Type)
+	if err != nil {
+		return nil, err
 	}
-	return ""
+	sortKey := keyDef.SortKey
+	sortKeyVal := ""
+	if keyDef.SortKey != nil {
+		sortKeyVal, err = getKeyString(item[sortKey.Name], sortKey.Type)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &keyStrings{PartitionKey: partKeyVal, SortKey: sortKeyVal}, nil
 }

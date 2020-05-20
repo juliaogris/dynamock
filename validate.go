@@ -49,7 +49,7 @@ func validateTable(t *Table) error {
 		}
 	}
 	for _, item := range t.items {
-		if err := validateItem(item, &t.Schema); err != nil {
+		if err := validateItem(item, t.Schema); err != nil {
 			return errs.Errorf("validateTable: %v (table: '%s')", err, t.Name)
 		}
 	}
@@ -73,7 +73,7 @@ func validateKeyPartDef(k *KeyPartDef) error {
 	return validateKeyType(k.Type)
 }
 
-func validateItem(item Item, schema *Schema) error {
+func validateItem(item Item, schema Schema) error {
 	if err := validateKey(item, schema.PrimaryKey); err != nil {
 		return errs.New(ErrPrimaryKeyVal, err)
 	}
@@ -133,59 +133,22 @@ func validateAttrKeyType(attr *dynamodb.AttributeValue, attrType string) error {
 	return errs.Errorf("%v: no %s in attribute %+v", ErrMissingType, attrType, attr)
 }
 
-func getKeyVal(attr *dynamodb.AttributeValue, attrType string) (string, error) {
-	if attr == nil {
-		return "", errs.Errorf("getKeyVal: %v", ErrMissingAttribute)
-	}
-	switch attrType {
-	case "string":
-		if attr.S == nil {
-			return "", errs.Errorf("%v: %v, expected string", ErrInvalidType, attr)
-		}
-		return *attr.S, nil
-	case "number":
-		if attr.N == nil {
-			return "", errs.Errorf("%v: %v, expected number", ErrInvalidType, attr)
-		}
-		return *attr.N, nil
-	}
-	return "", errs.Errorf("%v: %s expected 'string' or 'number'", ErrInvalidType, attr)
-}
-
-type keyVals struct {
-	PartitionKey string
-	SortKey      string
-}
-
-func getKeyVals(key Item, keyDef KeyDef) (*keyVals, error) {
-	if len(key) == 0 {
-		return nil, errs.Errorf("%v: empty key", ErrInvalidKey)
-	}
-	if len(key) > 2 {
-		return nil, errs.Errorf("%v: key with more than two fields", ErrInvalidKey)
-	}
-	partKey := keyDef.PartitionKey
-	partKeyVal, err := getKeyVal(key[partKey.Name], partKey.Type)
-	if err != nil {
-		return nil, err
-	}
-	sortKey := keyDef.SortKey
-	sortKeyVal := ""
-	if keyDef.SortKey != nil {
-		sortKeyVal, err = getKeyVal(key[sortKey.Name], sortKey.Type)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return &keyVals{PartitionKey: partKeyVal, SortKey: sortKeyVal}, nil
-}
-
 func validateTableName(db *DB, t *string) error {
 	if t == nil {
 		return errs.Errorf("%v: TableName", ErrNil)
 	}
 	if _, ok := db.tables[*t]; !ok {
-		return fmt.Errorf("%w: %s", ErrUnknownTable, *t)
+		return fmt.Errorf("%w: %s", ErrUnknownTable, *t) // should be a dynamodb.ResourceNotFoundExcpetion
 	}
 	return nil
+}
+
+func validateKeyItem(key Item, schema Schema) error {
+	if len(key) == 0 {
+		return errs.Errorf("%v: empty key", ErrInvalidKey)
+	}
+	if len(key) > 2 {
+		return errs.Errorf("%v: key with more than two fields", ErrInvalidKey)
+	}
+	return validateItem(key, schema)
 }
