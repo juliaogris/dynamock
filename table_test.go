@@ -142,3 +142,14 @@ func TestInsertItem(t *testing.T) {
 	want := []Item{item, item}
 	require.Equal(t, want, got)
 }
+
+func TestGetKeyStrings(t *testing.T) {
+	item := Item{"folder": {S: strPtr("/tmp/")}, "file": {S: strPtr("help.txt")}}
+	keyDef := KeyDef{
+		PartitionKey: KeyPartDef{Name: "folder", Type: "string"},
+		SortKey:      &KeyPartDef{Name: "file", Type: "number"},
+	}
+	out, err := getKeyStrings(item, keyDef)
+	requireErrIs(t, err, ErrInvalidType)
+	require.Nil(t, out)
+}

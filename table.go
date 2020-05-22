@@ -171,10 +171,7 @@ func (t *Table) Get(key Item) (Item, error) {
 	if err := validateKeyItem(key, t.Schema); err != nil {
 		return nil, err
 	}
-	k, err := getKeyStrings(key, t.Schema.PrimaryKey)
-	if err != nil {
-		return nil, err
-	}
+	k, _ := getKeyStrings(key, t.Schema.PrimaryKey)
 	return t.get(k), nil
 }
 

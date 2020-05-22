@@ -20,7 +20,7 @@ func requireErrIs(t *testing.T, err, target error) {
 	t.Helper()
 	require.Error(t, err)
 	require.Error(t, target)
-	require.Truef(t, errors.Is(err, target), "expected err '%v' to be '%v'", err, target)
+	require.Truef(t, errors.Is(err, target), "expected target: '%v' got: '%v'", target, err)
 }
 
 func ReadTestdataBytes(t *testing.T, filename string) []byte {
@@ -222,6 +222,16 @@ func TestGetItemNilErr(t *testing.T) {
 	requireErrIs(t, err, ErrNil)
 }
 
+func TestGetItemUnimplErr(t *testing.T) {
+	db := ReadTestdataDB(t, "db.json")
+	in := &dynamodb.GetItemInput{
+		TableName:       strPtr("product"),
+		AttributesToGet: []*string{strPtr("?")},
+	}
+	_, err := db.GetItem(in)
+	requireErrIs(t, err, ErrUnimpl)
+}
+
 func TestGetItemTableNameErr(t *testing.T) {
 	db := ReadTestdataDB(t, "db.json")
 	in := &dynamodb.GetItemInput{
@@ -369,6 +379,14 @@ func lenGSI(gsi map[string][]Item) int {
 	return n
 }
 
+func lenPrimary(byPrimary map[string]map[string]Item) int {
+	n := 0
+	for _, v := range byPrimary {
+		n = n + len(v)
+	}
+	return n
+}
+
 func TestPutNewItemIndexUpdate(t *testing.T) {
 	db := ReadTestdataDB(t, "db.json")
 	in := &dynamodb.PutItemInput{
@@ -378,16 +396,16 @@ func TestPutNewItemIndexUpdate(t *testing.T) {
 			"name": {S: strPtr("Hector")},
 			"age":  {N: strPtr("100")},
 		},
-		ReturnValues: strPtr("ALL_OLD"),
 	}
 	length := len(db.tables["person"].items)
+	lengthPrimary := lenPrimary(db.tables["person"].byPrimary)
 	lengthPhoneGSI := lenGSI(db.tables["person"].byGSI["phoneGSI"])
 	lengthNameGSI := lenGSI(db.tables["person"].byGSI["nameGSI"])
 	out, err := db.PutItem(in)
 	require.NoError(t, err)
 	require.Nil(t, out.Attributes)
 	require.Equal(t, length+1, len(db.tables["person"].items))
-	require.Equal(t, length+1, len(db.tables["person"].byPrimary))
+	require.Equal(t, lengthPrimary+1, lenPrimary(db.tables["person"].byPrimary))
 	require.Equal(t, lengthPhoneGSI, lenGSI(db.tables["person"].byGSI["phoneGSI"]))
 	require.Equal(t, lengthNameGSI+1, lenGSI(db.tables["person"].byGSI["nameGSI"]))
 }
@@ -404,6 +422,7 @@ func TestPutReplaceItemIndexUpdate(t *testing.T) {
 		ReturnValues: strPtr("ALL_OLD"),
 	}
 	length := len(db.tables["person"].items)
+	lengthPrimary := lenPrimary(db.tables["person"].byPrimary)
 	lengthPhoneGSI := lenGSI(db.tables["person"].byGSI["phoneGSI"])
 	lengthNameGSI := lenGSI(db.tables["person"].byGSI["nameGSI"])
 	out, err := db.PutItem(in)
@@ -411,7 +430,121 @@ func TestPutReplaceItemIndexUpdate(t *testing.T) {
 	want := Item{"id": {N: strPtr("0")}, "name": {S: strPtr("Jon")}, "phone": {S: strPtr("000")}, "age": {N: strPtr("0")}}
 	require.Equal(t, want, out.Attributes)
 	require.Equal(t, length, len(db.tables["person"].items))
-	require.Equal(t, length, len(db.tables["person"].byPrimary))
+	require.Equal(t, lengthPrimary, lenPrimary(db.tables["person"].byPrimary))
 	require.Equal(t, lengthPhoneGSI, lenGSI(db.tables["person"].byGSI["phoneGSI"]))
 	require.Equal(t, lengthNameGSI-1, lenGSI(db.tables["person"].byGSI["nameGSI"]))
+}
+
+func TestPutErr(t *testing.T) {
+	db := ReadTestdataDB(t, "db.json")
+	_, err := db.PutItem(nil)
+	requireErrIs(t, err, ErrNil)
+
+	in := &dynamodb.PutItemInput{
+		ConditionExpression: strPtr("??"),
+	}
+	_, err = db.PutItem(in)
+	requireErrIs(t, err, ErrUnimpl)
+
+	in = &dynamodb.PutItemInput{
+		TableName: strPtr("bad_table_name"),
+	}
+	_, err = db.PutItem(in)
+	requireErrIs(t, err, ErrUnknownTable)
+
+	_, err = db.PutItemWithContext(context.Background(), in)
+	requireErrIs(t, err, ErrUnknownTable)
+}
+
+func TestPutInvalidItemErr(t *testing.T) {
+	db := ReadTestdataDB(t, "db.json")
+	in := &dynamodb.PutItemInput{
+		TableName: strPtr("person"),
+		Item:      nil,
+	}
+	_, err := db.PutItem(in)
+	requireErrIs(t, err, ErrMissingAttribute)
+}
+
+func TestDeleteItem(t *testing.T) {
+	db := ReadTestdataDB(t, "db.json")
+	in := &dynamodb.DeleteItemInput{
+		TableName: strPtr("person"),
+		Key: Item{
+			"id": {N: strPtr("1")},
+		},
+		ReturnValues: strPtr("ALL_OLD"),
+	}
+	length := len(db.tables["person"].items)
+	lengthPrimary := lenPrimary(db.tables["person"].byPrimary)
+	lengthPhoneGSI := lenGSI(db.tables["person"].byGSI["phoneGSI"])
+	lengthNameGSI := lenGSI(db.tables["person"].byGSI["nameGSI"])
+	out, err := db.DeleteItem(in)
+	require.NoError(t, err)
+	want := `{ "id": 1, "name": "Jon", "phone": "111", "age": 11 }`
+	got := ItemToJSON(out.Attributes)
+	require.JSONEq(t, want, got)
+	require.Equal(t, length-1, len(db.tables["person"].items))
+	require.Equal(t, lengthPrimary-1, lenPrimary(db.tables["person"].byPrimary))
+	require.Equal(t, lengthPhoneGSI-1, lenGSI(db.tables["person"].byGSI["phoneGSI"]))
+	require.Equal(t, lengthNameGSI-1, lenGSI(db.tables["person"].byGSI["nameGSI"]))
+
+	// delete again
+	out, err = db.DeleteItem(in)
+	require.NoError(t, err)
+	require.Nil(t, out.Attributes)
+	require.Equal(t, length-1, len(db.tables["person"].items))
+	require.Equal(t, lengthPrimary-1, lenPrimary(db.tables["person"].byPrimary))
+	require.Equal(t, lengthPhoneGSI-1, lenGSI(db.tables["person"].byGSI["phoneGSI"]))
+	require.Equal(t, lengthNameGSI-1, lenGSI(db.tables["person"].byGSI["nameGSI"]))
+
+	// and again
+	in.ReturnValues = nil
+	out, err = db.DeleteItem(in)
+	require.NoError(t, err)
+	require.Nil(t, out.Attributes)
+	require.Equal(t, length-1, len(db.tables["person"].items))
+	require.Equal(t, lengthPrimary-1, lenPrimary(db.tables["person"].byPrimary))
+	require.Equal(t, lengthPhoneGSI-1, lenGSI(db.tables["person"].byGSI["phoneGSI"]))
+	require.Equal(t, lengthNameGSI-1, lenGSI(db.tables["person"].byGSI["nameGSI"]))
+}
+
+func TestDeleteItemErr(t *testing.T) {
+	db := ReadTestdataDB(t, "db.json")
+	_, err := db.DeleteItem(nil)
+	requireErrIs(t, err, ErrNil)
+
+	in := &dynamodb.DeleteItemInput{
+		ConditionExpression: strPtr("??"),
+	}
+	_, err = db.DeleteItem(in)
+	requireErrIs(t, err, ErrUnimpl)
+
+	in = &dynamodb.DeleteItemInput{
+		TableName: strPtr("bad_table_name"),
+	}
+	_, err = db.DeleteItem(in)
+	requireErrIs(t, err, ErrUnknownTable)
+
+	_, err = db.DeleteItemWithContext(context.Background(), in)
+	requireErrIs(t, err, ErrUnknownTable)
+}
+
+func TestDeleteInvalidItemErr(t *testing.T) {
+	db := ReadTestdataDB(t, "db.json")
+	in := &dynamodb.DeleteItemInput{
+		TableName: strPtr("person"),
+		Key:       nil,
+	}
+	_, err := db.DeleteItem(in)
+	requireErrIs(t, err, ErrInvalidKey)
+
+	_, err = db.DeleteItemWithContext(context.Background(), in)
+	requireErrIs(t, err, ErrInvalidKey)
+}
+
+func TestDeleteItemInSlice(t *testing.T) {
+	db := ReadTestdataDB(t, "db.json")
+	out := db.tables["product"].deleteItemInSlice(nil, nil, nil)
+	require.Nil(t, out)
 }

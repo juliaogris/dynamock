@@ -128,13 +128,13 @@ func (db *DB) PutItemWithContext(_ aws.Context, in *dynamodb.PutItemInput, _ ...
 
 func (db *DB) DeleteItem(in *dynamodb.DeleteItemInput) (*dynamodb.DeleteItemOutput, error) {
 	if in == nil {
-		return nil, errs.Errorf("%v: PutItemInput", ErrNil)
+		return nil, errs.Errorf("%v: DeleteItemInput", ErrNil)
 	}
 	if in.ConditionExpression != nil || in.ConditionalOperator != nil ||
 		in.Expected != nil || in.ExpressionAttributeNames != nil ||
 		in.ExpressionAttributeValues != nil {
 		msg := "ConditionExpression, ConditionalOperator, Expected, ExpressionAttributeNames, ExpressionAttributeValues, ReturnConsumedCapacity, ReturnItemCollectionMetrics, ReturnValues"
-		return nil, errs.Errorf("PutItem: %v: %s", ErrUnimpl, msg)
+		return nil, errs.Errorf("DeleteItem: %v: %s", ErrUnimpl, msg)
 	}
 	if err := validateTableName(db, in.TableName); err != nil {
 		return nil, err
