@@ -2,8 +2,6 @@ package dynamock
 
 import (
 	"errors"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/aws/aws-sdk-go/service/dynamodb"
@@ -12,24 +10,6 @@ import (
 
 func idDef() KeyDef {
 	return KeyDef{PartitionKey: KeyPartDef{Name: "id", Type: "string"}}
-}
-
-func TestValidate(t *testing.T) {
-	r, err := os.Open(filepath.Join("testdata", "db.json"))
-	require.NoError(t, err)
-
-	db, err := NewDBFromReader(r)
-	require.NoError(t, err)
-	require.NoError(t, validateDB(db))
-}
-
-func TestValidateDBErr(t *testing.T) {
-	db := &DB{
-		RawTables: []*Table{{Name: ""}},
-	}
-	err := validateDB(db)
-	require.Error(t, err)
-	require.True(t, errors.Is(err, ErrMissingName))
 }
 
 func TestValidateTableErr(t *testing.T) {

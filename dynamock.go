@@ -18,15 +18,23 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 )
 
+type JSONTable struct {
+	Name   string                   `json:"name"`
+	Schema Schema                   `json:"schema"`
+	Items  []map[string]interface{} `json:"items"`
+}
+
+type JSONDB struct {
+	Tables []*JSONTable `json:"tables"`
+}
+
 // DB implements the dynamodbiface.DynamoDBAPI interface
 type DB struct {
 	UnimplementedDB
 
-	RawTables []*Table `json:"tables"`
-
-	//todo: when removing RawTables tableNames []string
-	tables   map[string]*Table
-	pageSize int
+	tableNames []string
+	tables     map[string]*Table
+	pageSize   int
 }
 
 func NewDB() *DB {
@@ -34,42 +42,43 @@ func NewDB() *DB {
 }
 
 func NewDBFromReader(r io.Reader) (*DB, error) {
-	db := &DB{tables: map[string]*Table{}}
-
-	if err := json.NewDecoder(r).Decode(db); err != nil {
+	jdb := JSONDB{}
+	if err := json.NewDecoder(r).Decode(&jdb); err != nil {
 		return nil, errs.Errorf("NewDBFromReader: %v", err)
 	}
-	for _, t := range db.RawTables {
-		_ = t.convertRawItems()
-	}
-	if err := validateDB(db); err != nil {
-		return nil, err
-	}
-	for _, t := range db.RawTables {
-		db.tables[t.Name] = t
-	}
-	if err := db.index(); err != nil {
-		return nil, err
+	db := &DB{tables: map[string]*Table{}}
+	for _, t := range jdb.Tables {
+		items := make([]Item, len(t.Items))
+		for i, item := range t.Items {
+			av, _ := dynamodbattribute.MarshalMap(item)
+			items[i] = av
+		}
+		table := &Table{Name: t.Name, Schema: t.Schema, items: items}
+		if err := validateTable(table); err != nil {
+			return nil, err
+		}
+		if err := table.index(); err != nil {
+			return nil, err
+		}
+		db.tableNames = append(db.tableNames, table.Name)
+		db.tables[table.Name] = table
 	}
 	return db, nil
 }
 
-func (db *DB) index() error {
-	for _, table := range db.tables {
-		if err := table.index(); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (db *DB) WriteSnap(w io.Writer) error {
-	for _, t := range db.tables {
-		_ = dynamodbattribute.UnmarshalListOfMaps(t.items, &t.RawItems)
+	jdb := JSONDB{
+		Tables: make([]*JSONTable, len(db.tables)),
+	}
+	for i, name := range db.tableNames {
+		t := db.tables[name]
+		items := []map[string]interface{}{}
+		_ = dynamodbattribute.UnmarshalListOfMaps(t.items, &items)
+		jdb.Tables[i] = &JSONTable{Schema: t.Schema, Name: t.Name, Items: items}
 	}
 	e := json.NewEncoder(w)
 	e.SetIndent("", "  ")
-	return e.Encode(db)
+	return e.Encode(jdb)
 }
 
 func (db *DB) GetItem(in *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {

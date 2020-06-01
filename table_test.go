@@ -2,11 +2,9 @@ package dynamock
 
 import (
 	"bytes"
-	"errors"
 	"testing"
 
 	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,40 +35,8 @@ func TestWriteTableSnap(t *testing.T) {
 	require.Equal(t, want, sb.String())
 }
 
-func TestConvertRawItemsNoErr(t *testing.T) {
-	tbl := Table{
-		RawItems: []map[string]interface{}{
-			{"id": make(chan int)},
-		},
-	}
-	err := tbl.convertRawItems()
-	// Should be an error imo, but dynamo silently ignores
-	// types it cannot marshal. I couldn't work out how to make
-	// it error.
-	require.NoError(t, err)
-}
-
-func TestConvertRawItemsErr(t *testing.T) {
-	names := struct {
-		Names []*string `dynamodbav:",stringset"`
-	}{
-		Names: []*string{nil}, // nil value in stringset causes InvalidMarshalError
-	}
-	tbl := Table{
-		RawItems: []map[string]interface{}{
-			{"names": names},
-		},
-	}
-	err := tbl.convertRawItems()
-	require.Error(t, err)
-	errInv := &dynamodbattribute.InvalidMarshalError{}
-	require.True(t, errors.As(err, &errInv))
-}
-
 func TestIndexProductTable(t *testing.T) {
 	db := ReadTestdataDB(t, "db.json")
-	err := db.index()
-	require.NoError(t, err)
 	pt := db.tables["product"]
 	require.NotNil(t, pt)
 	require.Equal(t, 1, len(pt.byIndex))

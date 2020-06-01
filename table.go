@@ -21,10 +21,9 @@ var ErrDuplicate = errors.New("duplicate")
 const primaryName = "/" // no name clashes possible as "/" is illegal for index names in dynamodb
 
 type Table struct {
-	m        sync.RWMutex
-	Name     string    `json:"name"`
-	Schema   Schema    `json:"schema"`
-	RawItems []RawItem `json:"items"`
+	m      sync.RWMutex
+	Name   string `json:"name"`
+	Schema Schema `json:"schema"`
 
 	items []Item
 	// byPrimary is a lookup of Primary key by partition and sort key - unique result required.
@@ -35,7 +34,6 @@ type Table struct {
 	byIndex map[string]map[string][]Item
 }
 
-type RawItem = map[string]interface{} // as read from file
 type Item = map[string]*dynamodb.AttributeValue
 
 func ItemToJSON(i Item) string {
@@ -62,27 +60,6 @@ type KeyPartDef struct {
 	Type string `json:"type"` // string, number;  binary  not implemented
 }
 
-func (t *Table) convertRawItems() error {
-	t.m.Lock()
-	defer t.m.Unlock()
-	t.items = make([]map[string]*dynamodb.AttributeValue, len(t.RawItems))
-	for i, rawItem := range t.RawItems {
-		item, err := dynamodbattribute.MarshalMap(rawItem)
-		if err != nil {
-			return errs.Errorf("convertRawItems: table %s marshalMap: %v", t.Name, err)
-		}
-		t.items[i] = item
-	}
-	t.Schema.gsis = map[string]KeyDef{}
-	for _, gsi := range t.Schema.GSIs {
-		t.Schema.gsis[gsi.Name] = gsi
-	}
-	pk := t.Schema.PrimaryKey
-	pk.Name = primaryName
-	t.Schema.gsis[pk.Name] = pk
-	return nil
-}
-
 func (t *Table) WriteSnap(w io.Writer, cols []string) error {
 	t.m.RLock()
 	defer t.m.RUnlock()
@@ -105,16 +82,15 @@ func WriteSnap(w io.Writer, items []Item, cols []string) error {
 		untypedCols[i] = c
 	}
 	fmt.Fprintf(w, format, untypedCols...)
-	for _, rawItem := range iitems {
+	for _, iitem := range iitems {
 		for i, col := range cols {
-			row[i] = rawItem[col]
+			row[i] = iitem[col]
 		}
 		fmt.Fprintf(w, format, row...)
 	}
 	return nil
 }
 
-// Derived from rawItems, so rawItems must be set first
 func rowFormat(cols []string, iitems []map[string]interface{}) string {
 	pads := make([]int, len(cols))
 	for i, c := range cols {
@@ -138,6 +114,14 @@ func rowFormat(cols []string, iitems []map[string]interface{}) string {
 
 // derived from items, must be set
 func (t *Table) index() error {
+	t.Schema.gsis = map[string]KeyDef{}
+	for _, gsi := range t.Schema.GSIs {
+		t.Schema.gsis[gsi.Name] = gsi
+	}
+	pk := t.Schema.PrimaryKey
+	pk.Name = primaryName
+	t.Schema.gsis[pk.Name] = pk
+
 	t.byPrimary = map[string]map[string]Item{}
 	t.byIndex = map[string]map[string][]Item{}
 	for name := range t.Schema.gsis {

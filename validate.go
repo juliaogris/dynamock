@@ -25,15 +25,6 @@ var (
 	ErrMissingAttribute = errors.New("missing attribute")
 )
 
-func validateDB(db *DB) error {
-	for _, t := range db.RawTables {
-		if err := validateTable(t); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func validateTable(t *Table) error {
 	if t.Name == "" {
 		return errs.Errorf("validateTable: %v: table.Name", ErrMissingName)

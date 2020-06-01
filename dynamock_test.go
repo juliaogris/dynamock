@@ -69,8 +69,8 @@ func TestDBFromReader(t *testing.T) {
 	require.NotNil(t, db)
 
 	// first table schema
-	require.Equal(t, 3, len(db.RawTables))
-	pt := db.RawTables[0]
+	require.Equal(t, 3, len(db.tables))
+	pt := db.tables[db.tableNames[0]]
 	require.Equal(t, "product", pt.Name)
 	pk := pt.Schema.PrimaryKey.PartitionKey
 	require.Equal(t, "id", pk.Name)
@@ -90,7 +90,7 @@ func TestDBFromReader(t *testing.T) {
 	require.Equal(t, want, got)
 
 	// second table schema
-	pt = db.RawTables[1]
+	pt = db.tables[db.tableNames[1]]
 	require.Equal(t, "person", pt.Name)
 	pk = pt.Schema.PrimaryKey.PartitionKey
 	require.Equal(t, "id", pk.Name)
