@@ -10,6 +10,7 @@ import (
 
 var (
 	ErrUnknownTable     = errors.New("unknown table")
+	ErrUnknownIndex     = errors.New("unknown index")
 	ErrMissingName      = errors.New("missing name")
 	ErrSchemaValidation = errors.New("invalid schema")
 	ErrUnknownType      = errs.Errorf("unknown type")
@@ -139,6 +140,16 @@ func validateTableName(db *DB, t *string) error {
 	}
 	if _, ok := db.tables[*t]; !ok {
 		return fmt.Errorf("%w: %s", ErrUnknownTable, *t) // should be a dynamodb.ResourceNotFoundExcpetion
+	}
+	return nil
+}
+
+func validateIndexName(table *Table, index *string) error {
+	if index == nil {
+		return nil
+	}
+	if _, ok := table.byIndex[*index]; !ok {
+		return fmt.Errorf("%w: %s", ErrUnknownIndex, *index)
 	}
 	return nil
 }

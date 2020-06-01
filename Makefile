@@ -1,11 +1,10 @@
-all: test check-coverage lint  ## test, check coverage and lint
+all: test lint check-coverage   ## test, lint and check coverage
 	@if [ -e .git/rebase-merge ]; then git --no-pager log -1 --pretty='%h %s'; fi
 	@echo '$(COLOUR_GREEN)Success$(COLOUR_NORMAL)'
 
 clean::  ## Remove generated files
 
 .PHONY: all clean
-
 
 # -- Test ---------------------------------------------------------------------
 
@@ -29,7 +28,6 @@ FAIL_COVERAGE = { echo '$(COLOUR_RED)FAIL - Coverage below $(COVERAGE)%$(COLOUR_
 
 .PHONY: test check-coverage cover
 
-
 # -- Lint ---------------------------------------------------------------------
 
 GOLINT_VERSION = 1.24.0
@@ -47,7 +45,6 @@ lint-with-docker:
 	docker run --rm -v $(PWD):/src -w /src golangci/golangci-lint:v$(GOLINT_VERSION) golangci-lint run
 
 .PHONY: lint
-
 
 # --- Utilities ---------------------------------------------------------------
 

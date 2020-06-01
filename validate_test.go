@@ -130,3 +130,9 @@ func TestValidateKeyItemErr(t *testing.T) {
 	err = validateKeyItem(item, Schema{})
 	requireErrIs(t, err, ErrInvalidKey)
 }
+
+func TestValidateIndexName(t *testing.T) {
+	tbl := &Table{byIndex: map[string]map[string][]Item{}}
+	err := validateIndexName(tbl, strPtr("missing_index"))
+	requireErrIs(t, err, ErrUnknownIndex)
+}

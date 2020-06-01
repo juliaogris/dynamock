@@ -24,8 +24,9 @@ type DB struct {
 
 	RawTables []*Table `json:"tables"`
 
-	tableNames []string
-	tables     map[string]*Table
+	//todo: when removing RawTables tableNames []string
+	tables   map[string]*Table
+	pageSize int
 }
 
 func NewDB() *DB {
@@ -39,9 +40,7 @@ func NewDBFromReader(r io.Reader) (*DB, error) {
 		return nil, errs.Errorf("NewDBFromReader: %v", err)
 	}
 	for _, t := range db.RawTables {
-		if err := t.convertRawItems(); err != nil {
-			return nil, err
-		}
+		_ = t.convertRawItems()
 	}
 	if err := validateDB(db); err != nil {
 		return nil, err
@@ -66,9 +65,7 @@ func (db *DB) index() error {
 
 func (db *DB) WriteSnap(w io.Writer) error {
 	for _, t := range db.tables {
-		if err := dynamodbattribute.UnmarshalListOfMaps(t.items, &t.RawItems); err != nil {
-			return err
-		}
+		_ = dynamodbattribute.UnmarshalListOfMaps(t.items, &t.RawItems)
 	}
 	e := json.NewEncoder(w)
 	e.SetIndent("", "  ")
@@ -153,3 +150,98 @@ func (db *DB) DeleteItem(in *dynamodb.DeleteItemInput) (*dynamodb.DeleteItemOutp
 func (db *DB) DeleteItemWithContext(_ aws.Context, in *dynamodb.DeleteItemInput, _ ...request.Option) (*dynamodb.DeleteItemOutput, error) {
 	return db.DeleteItem(in)
 }
+
+func (db *DB) Query(in *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
+	if err := validateQueryIntput(in); err != nil {
+		return nil, err
+	}
+	if err := validateTableName(db, in.TableName); err != nil {
+		return nil, err
+	}
+	table := db.tables[*in.TableName]
+	if err := validateIndexName(table, in.IndexName); err != nil {
+		return nil, err
+	}
+	keyCond, err := parseKeyCondExpr(in.KeyConditionExpression, in.ExpressionAttributeValues, in.ExpressionAttributeNames)
+	if err != nil {
+		return nil, err
+	}
+	forward := true
+	if in.ScanIndexForward != nil && !*in.ScanIndexForward {
+		forward = false
+	}
+	items, err := table.Query(keyCond, in.IndexName, forward, in.ExclusiveStartKey)
+	if err != nil {
+		return nil, err
+	}
+	pagedItems := pageItems(items, in.Limit, db.pageSize)
+	if in.Select != nil && *in.Select == "COUNT" {
+		count := int64(len(pagedItems))
+		return &dynamodb.QueryOutput{Count: &count, ScannedCount: &count}, nil
+	}
+	out := &dynamodb.QueryOutput{
+		Items:            pagedItems,
+		LastEvaluatedKey: table.getLastEvaluatedKey(items, pagedItems),
+	}
+	return out, nil
+}
+
+func validateQueryIntput(in *dynamodb.QueryInput) error {
+	if in == nil {
+		return errs.Errorf("%v: QueryInput", ErrNil)
+	}
+	if in.AttributesToGet != nil || in.ConditionalOperator != nil ||
+		in.FilterExpression != nil || in.KeyConditions != nil ||
+		in.ProjectionExpression != nil || in.QueryFilter != nil {
+		msg := "AttributesToGet, ConditionalOperator, FilterExpression, KeyConditions, ProjectionExpression, QueryFilter"
+		return errs.Errorf("QueryItem: %v: %s", ErrUnimpl, msg)
+	}
+	if in.Select != nil && (*in.Select == "SPECIFIC_ATTRIBUTES" || *in.Select == "ALL_PROJECTED_ATTRIBUTES") {
+		return errs.Errorf("QueryItem: %v: %s", ErrUnimpl, *in.Select)
+	}
+	if in.KeyConditionExpression == nil {
+		return errs.Errorf("%v: KeyConditionExpression", ErrNil)
+	}
+	if in.ExpressionAttributeValues == nil {
+		return errs.Errorf("%v: missing ExpressionAttributeValues", ErrSubstitution)
+	}
+	return nil
+}
+
+func (db *DB) QueryWithContext(_ aws.Context, in *dynamodb.QueryInput, _ ...request.Option) (*dynamodb.QueryOutput, error) {
+	return db.Query(in)
+}
+
+/*
+func (db *DB) UpdateItem(in *dynamodb.UpdateItemInput) (*dynamodb.UpdateItemOutput, error) {
+	if in == nil || in.UpdateExpression == nil || in.Key == nil || in.ExpressionAttributeValues == nil {
+		return nil, errs.Errorf("%v: UpdateItemInput [UpdateExpression | Key | ExpressionAttributeValues]", ErrNil)
+	}
+	if in.AttributeUpdates != nil || in.ConditionalOperator != nil || in.Expected != nil {
+		msg := "AttributeUpdates, ConditionalOperator, Expected"
+		return nil, errs.Errorf("QueryItem: %v: %s", ErrUnimpl, msg)
+	}
+	if err := validateTableName(db, in.TableName); err != nil {
+		return nil, err
+	}
+	table := db.tables[*in.TableName]
+	item, err := table.Update(in.Key)
+	if err != nil {
+		return nil, err
+	}
+
+	// updateExpr, err := parseUpdateExpr(in.UpdateExpression, in.ExpressionAttributeValues, in.ExpressionAttributeNames)
+	// if err != nil {
+	//		return nil, err
+	//}
+	// table.Update(in.Key, updateExpr)
+	// ConditionExpression TBD
+	// UpdateExpression - parse it (ExpressionAttributeValues, ExpressionAttributeNames)
+	// ReturnValues: NONE, ALL_OLD, UPDATED_OLD, ALL_NEW, UPDATED_NEW
+	return &dynamodb.UpdateItemOutput{Attributes: item}, nil
+}
+
+func (db *DB) UpdateItemWithContext(_ aws.Context, in *dynamodb.UpdateItemInput, _ ...request.Option) (*dynamodb.UpdateItemOutput, error) {
+	return db.UpdateItem(in)
+}
+*/

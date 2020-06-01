@@ -73,7 +73,7 @@ func TestIndexProductTable(t *testing.T) {
 	require.NoError(t, err)
 	pt := db.tables["product"]
 	require.NotNil(t, pt)
-	require.Equal(t, 0, len(pt.byGSI))
+	require.Equal(t, 1, len(pt.byIndex))
 	require.Equal(t, 4, len(pt.byPrimary))
 	ids := []string{"1", "2", "3", "1234"}
 	for i, id := range ids {
@@ -87,7 +87,7 @@ func TestIndexPersonTable(t *testing.T) {
 	db := ReadTestdataDB(t, "db.json")
 	pt := db.tables["person"]
 	require.NotNil(t, pt)
-	require.Equal(t, 2, len(pt.byGSI))
+	require.Equal(t, 3, len(pt.byIndex))
 	require.Equal(t, 9, len(pt.byPrimary))
 	// testdata/db.json - items
 	// 	id: 0, name: "Jon",     phone: "000", age: 0
@@ -107,7 +107,7 @@ func TestIndexPersonTable(t *testing.T) {
 		require.Equal(t, want, got)
 	}
 
-	nameGSI := pt.byGSI["nameGSI"]
+	nameGSI := pt.byIndex["nameGSI"]
 	want := []Item{items[0], items[1]}
 	got := nameGSI["Jon"]
 	require.Equal(t, want, got)
@@ -122,7 +122,7 @@ func TestIndexPersonTable(t *testing.T) {
 
 	require.Nil(t, nameGSI["No-age"])
 
-	phoneGSI := pt.byGSI["phoneGSI"]
+	phoneGSI := pt.byIndex["phoneGSI"]
 	want = []Item{items[0]}
 	got = phoneGSI["000"]
 	require.Equal(t, want, got)
@@ -152,4 +152,12 @@ func TestGetKeyStrings(t *testing.T) {
 	out, err := getKeyStrings(item, keyDef)
 	requireErrIs(t, err, ErrInvalidType)
 	require.Nil(t, out)
+}
+
+func TestSliceAfterStartKeyErr(t *testing.T) {
+	items := []Item{{"BAD_ID": &dynamodb.AttributeValue{S: strPtr("1")}}}
+	start := Item{"id": &dynamodb.AttributeValue{S: strPtr("1")}}
+	key := KeyDef{PartitionKey: KeyPartDef{Name: "id", Type: "string"}}
+	_, err := sliceAfterStartKey(items, start, key)
+	requireErrIs(t, err, ErrNil)
 }

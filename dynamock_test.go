@@ -251,7 +251,7 @@ func TestGetItemKeyErr(t *testing.T) {
 	in := &dynamodb.GetItemInput{
 		TableName: strPtr("path"),
 		Key: Item{
-			"folderXXX": {S: strPtr("/Users/dev/")},
+			"bad_folder": {S: strPtr("/Users/dev/")},
 		},
 	}
 	_, err := db.GetItem(in)
@@ -261,7 +261,7 @@ func TestGetItemKeyErr(t *testing.T) {
 		TableName: strPtr("path"),
 		Key: Item{
 			"folder":   {S: strPtr("/Users/dev/")},
-			"fileXXXX": {S: strPtr("todo.txt")},
+			"bad_file": {S: strPtr("todo.txt")},
 		},
 	}
 	_, err = db.GetItem(in)
@@ -307,6 +307,7 @@ func TestGetKeyStringsErr(t *testing.T) {
 	requireErrIs(t, err, ErrInvalidKey)
 }
 
+//nolint:funlen
 func TestPutItem(t *testing.T) {
 	testCases := map[string]struct {
 		inTableName    string
@@ -374,7 +375,7 @@ func TestPutItem(t *testing.T) {
 func lenGSI(gsi map[string][]Item) int {
 	n := 0
 	for _, v := range gsi {
-		n = n + len(v)
+		n += len(v)
 	}
 	return n
 }
@@ -382,7 +383,7 @@ func lenGSI(gsi map[string][]Item) int {
 func lenPrimary(byPrimary map[string]map[string]Item) int {
 	n := 0
 	for _, v := range byPrimary {
-		n = n + len(v)
+		n += len(v)
 	}
 	return n
 }
@@ -399,15 +400,15 @@ func TestPutNewItemIndexUpdate(t *testing.T) {
 	}
 	length := len(db.tables["person"].items)
 	lengthPrimary := lenPrimary(db.tables["person"].byPrimary)
-	lengthPhoneGSI := lenGSI(db.tables["person"].byGSI["phoneGSI"])
-	lengthNameGSI := lenGSI(db.tables["person"].byGSI["nameGSI"])
+	lengthPhoneGSI := lenGSI(db.tables["person"].byIndex["phoneGSI"])
+	lengthNameGSI := lenGSI(db.tables["person"].byIndex["nameGSI"])
 	out, err := db.PutItem(in)
 	require.NoError(t, err)
 	require.Nil(t, out.Attributes)
 	require.Equal(t, length+1, len(db.tables["person"].items))
 	require.Equal(t, lengthPrimary+1, lenPrimary(db.tables["person"].byPrimary))
-	require.Equal(t, lengthPhoneGSI, lenGSI(db.tables["person"].byGSI["phoneGSI"]))
-	require.Equal(t, lengthNameGSI+1, lenGSI(db.tables["person"].byGSI["nameGSI"]))
+	require.Equal(t, lengthPhoneGSI, lenGSI(db.tables["person"].byIndex["phoneGSI"]))
+	require.Equal(t, lengthNameGSI+1, lenGSI(db.tables["person"].byIndex["nameGSI"]))
 }
 
 func TestPutReplaceItemIndexUpdate(t *testing.T) {
@@ -423,16 +424,16 @@ func TestPutReplaceItemIndexUpdate(t *testing.T) {
 	}
 	length := len(db.tables["person"].items)
 	lengthPrimary := lenPrimary(db.tables["person"].byPrimary)
-	lengthPhoneGSI := lenGSI(db.tables["person"].byGSI["phoneGSI"])
-	lengthNameGSI := lenGSI(db.tables["person"].byGSI["nameGSI"])
+	lengthPhoneGSI := lenGSI(db.tables["person"].byIndex["phoneGSI"])
+	lengthNameGSI := lenGSI(db.tables["person"].byIndex["nameGSI"])
 	out, err := db.PutItem(in)
 	require.NoError(t, err)
 	want := Item{"id": {N: strPtr("0")}, "name": {S: strPtr("Jon")}, "phone": {S: strPtr("000")}, "age": {N: strPtr("0")}}
 	require.Equal(t, want, out.Attributes)
 	require.Equal(t, length, len(db.tables["person"].items))
 	require.Equal(t, lengthPrimary, lenPrimary(db.tables["person"].byPrimary))
-	require.Equal(t, lengthPhoneGSI, lenGSI(db.tables["person"].byGSI["phoneGSI"]))
-	require.Equal(t, lengthNameGSI-1, lenGSI(db.tables["person"].byGSI["nameGSI"]))
+	require.Equal(t, lengthPhoneGSI, lenGSI(db.tables["person"].byIndex["phoneGSI"]))
+	require.Equal(t, lengthNameGSI-1, lenGSI(db.tables["person"].byIndex["nameGSI"]))
 }
 
 func TestPutErr(t *testing.T) {
@@ -477,8 +478,8 @@ func TestDeleteItem(t *testing.T) {
 	}
 	length := len(db.tables["person"].items)
 	lengthPrimary := lenPrimary(db.tables["person"].byPrimary)
-	lengthPhoneGSI := lenGSI(db.tables["person"].byGSI["phoneGSI"])
-	lengthNameGSI := lenGSI(db.tables["person"].byGSI["nameGSI"])
+	lengthPhoneGSI := lenGSI(db.tables["person"].byIndex["phoneGSI"])
+	lengthNameGSI := lenGSI(db.tables["person"].byIndex["nameGSI"])
 	out, err := db.DeleteItem(in)
 	require.NoError(t, err)
 	want := `{ "id": 1, "name": "Jon", "phone": "111", "age": 11 }`
@@ -486,8 +487,8 @@ func TestDeleteItem(t *testing.T) {
 	require.JSONEq(t, want, got)
 	require.Equal(t, length-1, len(db.tables["person"].items))
 	require.Equal(t, lengthPrimary-1, lenPrimary(db.tables["person"].byPrimary))
-	require.Equal(t, lengthPhoneGSI-1, lenGSI(db.tables["person"].byGSI["phoneGSI"]))
-	require.Equal(t, lengthNameGSI-1, lenGSI(db.tables["person"].byGSI["nameGSI"]))
+	require.Equal(t, lengthPhoneGSI-1, lenGSI(db.tables["person"].byIndex["phoneGSI"]))
+	require.Equal(t, lengthNameGSI-1, lenGSI(db.tables["person"].byIndex["nameGSI"]))
 
 	// delete again
 	out, err = db.DeleteItem(in)
@@ -495,8 +496,8 @@ func TestDeleteItem(t *testing.T) {
 	require.Nil(t, out.Attributes)
 	require.Equal(t, length-1, len(db.tables["person"].items))
 	require.Equal(t, lengthPrimary-1, lenPrimary(db.tables["person"].byPrimary))
-	require.Equal(t, lengthPhoneGSI-1, lenGSI(db.tables["person"].byGSI["phoneGSI"]))
-	require.Equal(t, lengthNameGSI-1, lenGSI(db.tables["person"].byGSI["nameGSI"]))
+	require.Equal(t, lengthPhoneGSI-1, lenGSI(db.tables["person"].byIndex["phoneGSI"]))
+	require.Equal(t, lengthNameGSI-1, lenGSI(db.tables["person"].byIndex["nameGSI"]))
 
 	// and again
 	in.ReturnValues = nil
@@ -505,8 +506,8 @@ func TestDeleteItem(t *testing.T) {
 	require.Nil(t, out.Attributes)
 	require.Equal(t, length-1, len(db.tables["person"].items))
 	require.Equal(t, lengthPrimary-1, lenPrimary(db.tables["person"].byPrimary))
-	require.Equal(t, lengthPhoneGSI-1, lenGSI(db.tables["person"].byGSI["phoneGSI"]))
-	require.Equal(t, lengthNameGSI-1, lenGSI(db.tables["person"].byGSI["nameGSI"]))
+	require.Equal(t, lengthPhoneGSI-1, lenGSI(db.tables["person"].byIndex["phoneGSI"]))
+	require.Equal(t, lengthNameGSI-1, lenGSI(db.tables["person"].byIndex["nameGSI"]))
 }
 
 func TestDeleteItemErr(t *testing.T) {
@@ -545,6 +546,243 @@ func TestDeleteInvalidItemErr(t *testing.T) {
 
 func TestDeleteItemInSlice(t *testing.T) {
 	db := ReadTestdataDB(t, "db.json")
-	out := db.tables["product"].deleteItemInSlice(nil, nil, nil)
+	out := db.tables["product"].deleteItemInSlice(nil, nil)
 	require.Nil(t, out)
+}
+
+func TestQueryPrimaryKey(t *testing.T) {
+	db := ReadTestdataDB(t, "db.json")
+	testCases := map[string]string{
+		"1":    `{ "id": "1", "name": "red pen", "price": 11 }`,
+		"2":    `{ "id": "2", "name": "blue pen", "price": 22 }`,
+		"3":    `{ "id": "3", "name": "green pen", "price": 33 }`,
+		"1234": `{ "id": "1234", "name": "green pen", "price": 1234 }`,
+	}
+	for id, want := range testCases {
+		id, want := id, want
+		t.Run("query-product-id-"+id, func(t *testing.T) {
+			in := &dynamodb.QueryInput{
+				TableName:                 strPtr("product"),
+				KeyConditionExpression:    strPtr("id = :id"),
+				ExpressionAttributeValues: Item{":id": {S: &id}},
+			}
+			out, err := db.Query(in)
+			require.NoError(t, err)
+			require.Equal(t, 1, len(out.Items))
+			require.JSONEq(t, want, ItemToJSON(out.Items[0]))
+			require.Nil(t, out.LastEvaluatedKey)
+
+			forward := false
+			in.ScanIndexForward = &forward
+			in.ExpressionAttributeNames = map[string]*string{"#id": strPtr("id")}
+			in.KeyConditionExpression = strPtr("#id = :id")
+			out, err = db.Query(in)
+			require.NoError(t, err)
+			require.Equal(t, 1, len(out.Items))
+			require.JSONEq(t, want, ItemToJSON(out.Items[0]))
+			require.Nil(t, out.LastEvaluatedKey)
+		})
+	}
+}
+
+func TestQueryIndex(t *testing.T) {
+	db := ReadTestdataDB(t, "db.json")
+	in := &dynamodb.QueryInput{
+		TableName:                 strPtr("person"),
+		IndexName:                 strPtr("nameGSI"),
+		KeyConditionExpression:    strPtr("name = :name"),
+		ExpressionAttributeValues: Item{":name": {S: strPtr("Jen")}},
+	}
+	out, err := db.Query(in)
+	require.NoError(t, err)
+	require.Equal(t, 2, len(out.Items))
+	require.Nil(t, out.LastEvaluatedKey)
+	cols := []string{"id", "name", "age"}
+	got := SnapString(out.Items, cols)
+	want := `
+id, name, age
+ 8,  Jen,  15
+ 4,  Jen,  44
+`[1:]
+	require.Equal(t, want, got)
+
+	in.SetScanIndexForward(false)
+	out, err = db.Query(in)
+	require.NoError(t, err)
+	require.Nil(t, out.LastEvaluatedKey)
+	want = `
+id, name, age
+ 4,  Jen,  44
+ 8,  Jen,  15
+`[1:]
+	require.Equal(t, want, SnapString(out.Items, cols))
+
+	in.SetLimit(int64(1))
+	out, err = db.Query(in)
+	require.NoError(t, err)
+	want = `
+id, name, age
+ 4,  Jen,  44
+`[1:]
+	require.Equal(t, want, SnapString(out.Items, cols))
+	want = `{ "id": 4}`
+	require.JSONEq(t, want, ItemToJSON(out.LastEvaluatedKey))
+
+	in.SetExclusiveStartKey(out.LastEvaluatedKey)
+	in.SetLimit(int64(5))
+	out, err = db.Query(in)
+	require.NoError(t, err)
+	want = `
+id, name, age
+ 8,  Jen,  15
+`[1:]
+	require.Equal(t, want, SnapString(out.Items, cols))
+	require.Nil(t, out.LastEvaluatedKey)
+
+	out, err = db.QueryWithContext(context.Background(), in)
+	require.NoError(t, err)
+	require.Equal(t, want, SnapString(out.Items, cols))
+	require.Nil(t, out.LastEvaluatedKey)
+}
+
+func TestQuerySortCond(t *testing.T) {
+	db := ReadTestdataDB(t, "db.json")
+	in := &dynamodb.QueryInput{
+		TableName:                 strPtr("person"),
+		IndexName:                 strPtr("nameGSI"),
+		KeyConditionExpression:    strPtr("name = :name AND age > :age"),
+		ExpressionAttributeValues: Item{":name": {S: strPtr("Jen")}, ":age": {N: strPtr("20")}},
+	}
+	out, err := db.Query(in)
+	require.NoError(t, err)
+	require.Nil(t, out.LastEvaluatedKey)
+	cols := []string{"id", "name", "age"}
+	got := SnapString(out.Items, cols)
+	want := `
+id, name, age
+ 4,  Jen,  44
+`[1:]
+	require.Equal(t, want, got)
+
+	in.SetKeyConditionExpression("name = :name AND age >= :age")
+	out, err = db.Query(in)
+	require.NoError(t, err)
+	got = SnapString(out.Items, cols)
+	require.Equal(t, want, got)
+
+	in.SetSelect("COUNT")
+	out, err = db.Query(in)
+	require.NoError(t, err)
+	require.Nil(t, out.LastEvaluatedKey)
+	require.Equal(t, 0, len(out.Items))
+	require.NotNil(t, out.Count)
+	require.Equal(t, int64(1), *out.Count)
+	require.NotNil(t, out.ScannedCount)
+	require.Equal(t, int64(1), *out.ScannedCount)
+
+	in.SetKeyConditionExpression("name = :name AND age = :age")
+	out, err = db.Query(in)
+	require.NoError(t, err)
+	require.Nil(t, out.LastEvaluatedKey)
+	require.Equal(t, 0, len(out.Items))
+}
+
+func queryInputFixture() *dynamodb.QueryInput {
+	return &dynamodb.QueryInput{
+		TableName:                 strPtr("person"),
+		IndexName:                 strPtr("nameGSI"),
+		KeyConditionExpression:    strPtr("name = :name"),
+		ExpressionAttributeValues: Item{":name": {S: strPtr("Jen")}},
+	}
+}
+
+func TestQueryValidationErr(t *testing.T) {
+	db := ReadTestdataDB(t, "db.json")
+	_, err := db.Query(nil)
+	requireErrIs(t, err, ErrNil)
+
+	in := queryInputFixture().SetAttributesToGet([]*string{})
+	_, err = db.Query(in)
+	requireErrIs(t, err, ErrUnimpl)
+
+	in = queryInputFixture().SetSelect("SPECIFIC_ATTRIBUTES")
+	_, err = db.Query(in)
+	requireErrIs(t, err, ErrUnimpl)
+
+	in = queryInputFixture()
+	in.ExpressionAttributeValues = nil
+	_, err = db.Query(in)
+	requireErrIs(t, err, ErrSubstitution)
+
+	in = queryInputFixture()
+	in.KeyConditionExpression = nil
+	_, err = db.Query(in)
+	requireErrIs(t, err, ErrNil)
+
+	in = queryInputFixture().SetTableName("BAD_TABLE_NAME")
+	_, err = db.Query(in)
+	requireErrIs(t, err, ErrUnknownTable)
+
+	in = queryInputFixture().SetIndexName("BAD_INDEX_NAME")
+	_, err = db.Query(in)
+	requireErrIs(t, err, ErrUnknownIndex)
+
+	in = queryInputFixture().SetKeyConditionExpression("name > :name")
+	_, err = db.Query(in)
+	requireErrIs(t, err, ErrInvalidKeyCondition)
+
+	in = queryInputFixture().SetKeyConditionExpression("BAD_ATTR_NAME = :name")
+	_, err = db.Query(in)
+	requireErrIs(t, err, ErrInvalidKey)
+
+	in = queryInputFixture().SetExpressionAttributeValues(Item{":name": {N: strPtr("1")}})
+	_, err = db.Query(in)
+	requireErrIs(t, err, ErrInvalidKey)
+
+	in = queryInputFixture().SetExclusiveStartKey(Item{"id": {S: strPtr("1")}})
+	_, err = db.Query(in)
+	requireErrIs(t, err, ErrInvalidKey)
+}
+
+func TestQueryCompositePK(t *testing.T) {
+	db := ReadTestdataDB(t, "db.json")
+	db.pageSize = 1
+	in := &dynamodb.QueryInput{
+		TableName:                 strPtr("path"),
+		KeyConditionExpression:    strPtr("folder = :folder"),
+		ExpressionAttributeValues: Item{":folder": {S: strPtr("/Users/dev/")}},
+	}
+	out, err := db.Query(in)
+	require.NoError(t, err)
+	require.Equal(t, len(out.Items), 1)
+	want := `{"folder": "/Users/dev/", "file": "Makefile", "perms": "-rw-r--r--" }`
+	require.JSONEq(t, want, ItemToJSON(out.Items[0]))
+	require.NotNil(t, out.LastEvaluatedKey)
+	want = `{ "folder": "/Users/dev/", "file": "Makefile"}`
+	require.JSONEq(t, want, ItemToJSON(out.LastEvaluatedKey))
+
+	in.SetExclusiveStartKey(out.LastEvaluatedKey)
+	out, err = db.Query(in)
+	require.NoError(t, err)
+	require.Equal(t, len(out.Items), 1)
+	want = `{"folder": "/Users/dev/", "file": "todo.txt", "perms": "-rw-r--r--" }`
+	require.JSONEq(t, want, ItemToJSON(out.Items[0]))
+	require.Nil(t, out.LastEvaluatedKey)
+
+	in.SetExclusiveStartKey(nil)
+	in.SetKeyConditionExpression("folder = :folder AND begins_with(file, :file)")
+	av := Item{":folder": {S: strPtr("/Users/dev/")}, ":file": {S: strPtr("t")}}
+	in.SetExpressionAttributeValues(av)
+	out, err = db.Query(in)
+	require.NoError(t, err)
+	require.Equal(t, len(out.Items), 1)
+	want = `{"folder": "/Users/dev/", "file": "todo.txt", "perms": "-rw-r--r--" }`
+	require.JSONEq(t, want, ItemToJSON(out.Items[0]))
+	require.Nil(t, out.LastEvaluatedKey)
+
+	in.SetExclusiveStartKey(Item{"folder": {S: strPtr("MISSING")}, "file": {S: strPtr("MISSING")}})
+	out, err = db.Query(in)
+	require.NoError(t, err)
+	require.Equal(t, len(out.Items), 0)
+	require.Nil(t, out.LastEvaluatedKey)
 }

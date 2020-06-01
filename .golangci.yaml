@@ -5,15 +5,12 @@ linters:
     - deadcode
     - depguard
     - dogsled
-    - dupl
     - errcheck
     - funlen
-    - gochecknoglobals
     - gochecknoinits
     - gocognit
     - gocritic
     - gocyclo
-    - godox
     - gofmt
     - goimports
     - golint
@@ -38,4 +35,4 @@ linters:
     - unused
     - varcheck
     - whitespace
-# disabled: gomnd lll wsl goconst
+# disabled: dupl gochecknoglobals goconst godox gomnd lll wsl
