@@ -13,7 +13,7 @@ func idDef() KeyDef {
 }
 
 func TestValidateTableErr(t *testing.T) {
-	tbl := &Table{Name: "table1"}
+	tbl := &Table{name: "table1"}
 	err := validateTable(tbl)
 
 	require.Error(t, err)
@@ -22,8 +22,8 @@ func TestValidateTableErr(t *testing.T) {
 
 func TestValidateTableGSIErr(t *testing.T) {
 	tbl := &Table{
-		Name: "table1",
-		Schema: Schema{
+		name: "table1",
+		schema: Schema{
 			PrimaryKey: idDef(),
 			GSIs: []KeyDef{
 				{PartitionKey: KeyPartDef{}},
@@ -43,8 +43,8 @@ func TestValidateTableGSITypeErr(t *testing.T) {
 		},
 	}
 	tbl := &Table{
-		Name: "table1",
-		Schema: Schema{
+		name: "table1",
+		schema: Schema{
 			PrimaryKey: idDef(),
 			GSIs:       []KeyDef{emailGSI},
 		},
@@ -55,8 +55,8 @@ func TestValidateTableGSITypeErr(t *testing.T) {
 
 func TestValidateTableItemErr(t *testing.T) {
 	tbl := &Table{
-		Name:   "table1",
-		Schema: Schema{PrimaryKey: idDef()},
+		name:   "table1",
+		schema: Schema{PrimaryKey: idDef()},
 		items: []Item{
 			{"name": &dynamodb.AttributeValue{S: strPtr("Joe")}},
 		},

@@ -26,23 +26,23 @@ var (
 )
 
 func validateTable(t *Table) error {
-	if t.Name == "" {
+	if t.name == "" {
 		return errs.Errorf("validateTable: %v: table.Name", ErrMissingName)
 	}
-	if err := validateKeyDef(t.Schema.PrimaryKey); err != nil {
+	if err := validateKeyDef(t.schema.PrimaryKey); err != nil {
 		return errs.Errorf("%v: %v (primary key)", ErrSchemaValidation, err)
 	}
-	for _, gsi := range t.Schema.GSIs {
+	for _, gsi := range t.schema.GSIs {
 		if gsi.Name == "" {
-			return errs.Errorf("validateTable: %v: globalSecondaryIndex.Name in table %s", ErrMissingName, t.Name)
+			return errs.Errorf("validateTable: %v: globalSecondaryIndex.Name in table %s", ErrMissingName, t.name)
 		}
 		if err := validateKeyDef(gsi); err != nil {
 			return errs.Errorf("%v: %v (globalSecondaryIndex %s)", ErrSchemaValidation, err, gsi.Name)
 		}
 	}
 	for _, item := range t.items {
-		if err := validateItem(item, t.Schema); err != nil {
-			return errs.Errorf("validateTable: %v (table: '%s')", err, t.Name)
+		if err := validateItem(item, t.schema); err != nil {
+			return errs.Errorf("validateTable: %v (table: '%s')", err, t.name)
 		}
 	}
 	return nil

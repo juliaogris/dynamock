@@ -9,8 +9,13 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 )
 
-var ErrInvalidKeyCondition = errs.Errorf("invalid key condition")
-var ErrSubstitution = errs.Errorf("missing substitution")
+var (
+	ErrInvalidKeyCondition = errs.Errorf("invalid key condition")
+	ErrSubstitution        = errs.Errorf("missing substitution")
+
+	reExprName = regexp.MustCompile(`^#?[0-9A-Za-z_-]+$`)
+	reExprVal  = regexp.MustCompile(`^:[0-9A-Za-z_-]+$`)
+)
 
 type op int
 
@@ -140,13 +145,13 @@ func parseKeyCondExpr(s *string, valueSub Item, nameSub map[string]*string) (*ke
 	if err != nil {
 		return nil, err
 	}
-	k, err := substitute(kc.partitionCond, valueSub, nameSub)
+	k, err := substituteKeyCondExpr(kc.partitionCond, valueSub, nameSub)
 	if err != nil {
 		return nil, err
 	}
 	kc.partitionCond = *k
 	if kc.sortCond != nil {
-		k, err := substitute(*kc.sortCond, valueSub, nameSub)
+		k, err := substituteKeyCondExpr(*kc.sortCond, valueSub, nameSub)
 		if err != nil {
 			return nil, err
 		}
@@ -204,11 +209,6 @@ func parseKeyCond(s string) (*keyCond, error) {
 	return nil, errs.Errorf("%v: %s", ErrInvalidKeyCondition, s)
 }
 
-var (
-	reExprName = regexp.MustCompile(`^#?[0-9A-Za-z_-]+$`)
-	reExprVal  = regexp.MustCompile(`^:[0-9A-Za-z_-]+$`)
-)
-
 func newKeyCond(s []string, op op) (*keyCond, error) {
 	if (op != between && len(s) != 2) || (op == between && len(s) != 3) {
 		return nil, errs.Errorf("%v: invalid '%v' expression", ErrInvalidKeyCondition, op)
@@ -231,16 +231,25 @@ func newKeyCond(s []string, op op) (*keyCond, error) {
 	return &keyCond{keyName: keyName, op: op, val: val, val2: val2}, nil
 }
 
-func substitute(k keyCond, valueSub Item, nameSub map[string]*string) (*keyCond, error) {
-	if strings.HasPrefix(k.keyName, "#") {
-		if nameSub == nil {
-			return nil, errs.Errorf("%v: %v: %s: ExpressionAttributeNames are nil", ErrInvalidKeyCondition, ErrSubstitution, k.keyName)
-		}
-		s, ok := nameSub[k.keyName]
-		if !ok {
-			return nil, errs.Errorf("%v: %v: %s", ErrInvalidKeyCondition, ErrSubstitution, k.keyName)
-		}
-		k.keyName = *s
+func substituteName(s string, nameSub map[string]*string) (string, error) {
+	if !strings.HasPrefix(s, "#") {
+		return s, nil
+	}
+	if nameSub == nil {
+		return "", errs.Errorf("%v: %s: ExpressionAttributeNames are nil", ErrSubstitution, s)
+	}
+	result, ok := nameSub[s]
+	if !ok {
+		return "", errs.Errorf("%v: %s", ErrSubstitution, s)
+	}
+	return *result, nil
+}
+
+func substituteKeyCondExpr(k keyCond, valueSub Item, nameSub map[string]*string) (*keyCond, error) {
+	var err error
+	k.keyName, err = substituteName(k.keyName, nameSub)
+	if err != nil {
+		return nil, err
 	}
 	av, ok := valueSub[k.val]
 	if !ok {

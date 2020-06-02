@@ -156,11 +156,11 @@ func TestParseKeyCondExprErr(t *testing.T) {
 	e = "#x = :x"
 	subs = Item{":x": &dynamodb.AttributeValue{S: strPtr("123")}}
 	_, err = parseKeyCondExpr(&e, subs, nil)
-	requireErrIs(t, err, ErrInvalidKeyCondition)
+	requireErrIs(t, err, ErrSubstitution)
 
 	nameSubs := map[string]*string{"#BAD_X": strPtr("x")}
 	_, err = parseKeyCondExpr(&e, subs, nameSubs)
-	requireErrIs(t, err, ErrInvalidKeyCondition)
+	requireErrIs(t, err, ErrSubstitution)
 }
 
 func TestNewKeyCond(t *testing.T) {

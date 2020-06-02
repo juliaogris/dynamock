@@ -22,8 +22,8 @@ const primaryName = "/" // no name clashes possible as "/" is illegal for index 
 
 type Table struct {
 	m      sync.RWMutex
-	Name   string `json:"name"`
-	Schema Schema `json:"schema"`
+	name   string
+	schema Schema
 
 	items []Item
 	// byPrimary is a lookup of Primary key by partition and sort key - unique result required.
@@ -114,17 +114,17 @@ func rowFormat(cols []string, iitems []map[string]interface{}) string {
 
 // derived from items, must be set
 func (t *Table) index() error {
-	t.Schema.gsis = map[string]KeyDef{}
-	for _, gsi := range t.Schema.GSIs {
-		t.Schema.gsis[gsi.Name] = gsi
+	t.schema.gsis = map[string]KeyDef{}
+	for _, gsi := range t.schema.GSIs {
+		t.schema.gsis[gsi.Name] = gsi
 	}
-	pk := t.Schema.PrimaryKey
+	pk := t.schema.PrimaryKey
 	pk.Name = primaryName
-	t.Schema.gsis[pk.Name] = pk
+	t.schema.gsis[pk.Name] = pk
 
 	t.byPrimary = map[string]map[string]Item{}
 	t.byIndex = map[string]map[string][]Item{}
-	for name := range t.Schema.gsis {
+	for name := range t.schema.gsis {
 		t.byIndex[name] = map[string][]Item{}
 	}
 	for _, item := range t.items {
@@ -139,14 +139,14 @@ func (t *Table) indexItem(item Item) error {
 	if err := t.indexItemByPrimaryKey(item); err != nil {
 		return err
 	}
-	for _, gsi := range t.Schema.gsis {
+	for _, gsi := range t.schema.gsis {
 		t.indexItemByKey(item, gsi)
 	}
 	return nil
 }
 
 func (t *Table) indexItemByPrimaryKey(item Item) error {
-	pk := t.Schema.PrimaryKey
+	pk := t.schema.PrimaryKey
 	k, _ := getKeyStrings(item, pk)
 	if t.byPrimary[k.PartitionKey] == nil {
 		t.byPrimary[k.PartitionKey] = map[string]Item{}
@@ -169,7 +169,7 @@ func (t *Table) indexItemByKey(item Item, gsi KeyDef) {
 func (t *Table) Delete(key Item) (Item, error) {
 	t.m.Lock()
 	defer t.m.Unlock()
-	if err := validateKeyItem(key, t.Schema); err != nil {
+	if err := validateKeyItem(key, t.schema); err != nil {
 		return nil, err
 	}
 	return t.pop(key), nil
@@ -178,17 +178,17 @@ func (t *Table) Delete(key Item) (Item, error) {
 func (t *Table) Get(key Item) (Item, error) {
 	t.m.RLock()
 	defer t.m.RUnlock()
-	if err := validateKeyItem(key, t.Schema); err != nil {
+	if err := validateKeyItem(key, t.schema); err != nil {
 		return nil, err
 	}
-	k, _ := getKeyStrings(key, t.Schema.PrimaryKey)
+	k, _ := getKeyStrings(key, t.schema.PrimaryKey)
 	return t.get(k), nil
 }
 
 func (t *Table) Put(item Item) (Item, error) {
 	t.m.Lock()
 	defer t.m.Unlock()
-	if err := validateItem(item, t.Schema); err != nil {
+	if err := validateItem(item, t.schema); err != nil {
 		return nil, err
 	}
 	old := t.pop(item)
@@ -202,13 +202,13 @@ func (t *Table) Query(k *keyCondExpr, gsi *string, forward bool, exclusiveStartK
 	defer t.m.RUnlock()
 	var items []Item
 	index := primaryName
-	key := t.Schema.PrimaryKey
+	key := t.schema.PrimaryKey
 	if gsi != nil {
 		index = *gsi
-		key = t.Schema.gsis[index]
+		key = t.schema.gsis[index]
 	}
 	if key.PartitionKey.Name != k.partitionCond.keyName {
-		return nil, errs.Errorf("Query: KeyCondidtion: %v: want: %s got %s", ErrInvalidKey, t.Schema.PrimaryKey.PartitionKey.Name, k.partitionCond.keyName)
+		return nil, errs.Errorf("Query: KeyCondidtion: %v: want: %s got %s", ErrInvalidKey, t.schema.PrimaryKey.PartitionKey.Name, k.partitionCond.keyName)
 	}
 	s, err := getKeyString(k.partitionCond.av, key.PartitionKey.Type)
 	if err != nil {
@@ -218,11 +218,37 @@ func (t *Table) Query(k *keyCondExpr, gsi *string, forward bool, exclusiveStartK
 	if !forward {
 		items = reverse(items)
 	}
-	items, err = sliceAfterStartKey(items, exclusiveStartKey, t.Schema.PrimaryKey)
+	items, err = sliceAfterStartKey(items, exclusiveStartKey, t.schema.PrimaryKey)
 	if err != nil {
 		return nil, err
 	}
 	return applySortKeyCond(items, k.sortCond), nil
+}
+
+func (t *Table) Update(key Item, updateExpr *updateExpr, returnValues *string) (Item, error) {
+	t.m.Lock()
+	defer t.m.Unlock()
+	if err := validateKeyItem(key, t.schema); err != nil {
+		return nil, err
+	}
+	k, _ := getKeyStrings(key, t.schema.PrimaryKey)
+	item := t.get(k)
+	var returnAttr Item
+	if returnValues != nil && *returnValues == "ALL_NEW" {
+		returnAttr = item
+	} else if returnValues != nil && *returnValues == "ALL_OLD" {
+		returnAttr = Item{}
+		for k, v := range item {
+			returnAttr[k] = v
+		}
+	}
+	for k, v := range updateExpr.setExpr {
+		item[k] = v
+	}
+	for _, k := range updateExpr.removeAttributes {
+		delete(item, k)
+	}
+	return returnAttr, nil
 }
 
 func applySortKeyCond(items []Item, k *keyCond) []Item {
@@ -275,7 +301,7 @@ func (t *Table) getLastEvaluatedKey(items, pagedItems []Item) Item {
 		return nil
 	}
 	lastItem := pagedItems[len(pagedItems)-1]
-	key := t.Schema.PrimaryKey
+	key := t.schema.PrimaryKey
 	result := Item{
 		key.PartitionKey.Name: lastItem[key.PartitionKey.Name],
 	}
@@ -294,13 +320,13 @@ func (t *Table) get(k *keyStrings) Item {
 
 // item needs to be validated with ValidateItem
 func (t *Table) pop(key Item) Item {
-	pk := t.Schema.PrimaryKey
+	pk := t.schema.PrimaryKey
 	k, _ := getKeyStrings(key, pk)
 	old := t.get(k)
 	if old == nil {
 		return nil
 	}
-	for _, gsi := range t.Schema.GSIs {
+	for _, gsi := range t.schema.GSIs {
 		if hasKey(old, gsi) {
 			gsiKey, _ := getKeyStrings(old, gsi)
 			items := t.byIndex[gsi.Name][gsiKey.PartitionKey]
@@ -313,7 +339,7 @@ func (t *Table) pop(key Item) Item {
 }
 
 func (t *Table) deleteItemInSlice(items []Item, delKeys *keyStrings) []Item {
-	pk := t.Schema.PrimaryKey
+	pk := t.schema.PrimaryKey
 	for i, item := range items {
 		k, _ := getKeyStrings(item, pk)
 		if k.PartitionKey == delKeys.PartitionKey && k.SortKey == delKeys.SortKey {

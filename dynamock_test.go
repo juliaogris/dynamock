@@ -71,14 +71,14 @@ func TestDBFromReader(t *testing.T) {
 	// first table schema
 	require.Equal(t, 3, len(db.tables))
 	pt := db.tables[db.tableNames[0]]
-	require.Equal(t, "product", pt.Name)
-	pk := pt.Schema.PrimaryKey.PartitionKey
+	require.Equal(t, "product", pt.name)
+	pk := pt.schema.PrimaryKey.PartitionKey
 	require.Equal(t, "id", pk.Name)
 	require.Equal(t, "string", pk.Type)
-	sk := pt.Schema.PrimaryKey.SortKey
+	sk := pt.schema.PrimaryKey.SortKey
 	require.Nil(t, sk)
-	require.Equal(t, 0, len(pt.Schema.GSIs))
-	require.Nil(t, pt.Schema.GSIs)
+	require.Equal(t, 0, len(pt.schema.GSIs))
+	require.Nil(t, pt.schema.GSIs)
 
 	// first table data
 	require.Equal(t, 4, len(pt.items))
@@ -91,19 +91,19 @@ func TestDBFromReader(t *testing.T) {
 
 	// second table schema
 	pt = db.tables[db.tableNames[1]]
-	require.Equal(t, "person", pt.Name)
-	pk = pt.Schema.PrimaryKey.PartitionKey
+	require.Equal(t, "person", pt.name)
+	pk = pt.schema.PrimaryKey.PartitionKey
 	require.Equal(t, "id", pk.Name)
 	require.Equal(t, "number", pk.Type)
-	sk = pt.Schema.PrimaryKey.SortKey
+	sk = pt.schema.PrimaryKey.SortKey
 	require.Nil(t, sk)
-	require.Equal(t, 2, len(pt.Schema.GSIs))
+	require.Equal(t, 2, len(pt.schema.GSIs))
 	wantS := KeyDef{
 		Name:         "phoneGSI",
 		PartitionKey: KeyPartDef{Name: "phone", Type: "string"},
 		SortKey:      &KeyPartDef{Name: "name", Type: "string"},
 	}
-	gotS := pt.Schema.GSIs[1]
+	gotS := pt.schema.GSIs[1]
 	require.Equal(t, wantS, gotS)
 
 	// second table data
@@ -785,4 +785,83 @@ func TestQueryCompositePK(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, len(out.Items), 0)
 	require.Nil(t, out.LastEvaluatedKey)
+}
+
+func TestUpdateItem(t *testing.T) {
+	db := ReadTestdataDB(t, "db.json")
+	in := &dynamodb.UpdateItemInput{
+		TableName:                 strPtr("product"),
+		Key:                       Item{"id": {S: strPtr("1")}},
+		UpdateExpression:          strPtr("SET price=:price"),
+		ExpressionAttributeValues: Item{":price": {N: strPtr("100")}},
+		ReturnValues:              strPtr("ALL_NEW"),
+	}
+	out, err := db.UpdateItem(in)
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	want := `{ "id": "1", "name": "red pen", "price": 100 }`
+	require.JSONEq(t, want, ItemToJSON(out.Attributes))
+
+	in.SetReturnValues("ALL_OLD")
+	in.SetExpressionAttributeValues(Item{":price": {N: strPtr("200")}})
+	out, err = db.UpdateItem(in)
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	want = `{ "id": "1", "name": "red pen", "price": 100 }`
+	require.JSONEq(t, want, ItemToJSON(out.Attributes))
+	got := db.tables["product"].items[0]
+	want = `{ "id": "1", "name": "red pen", "price": 200 }`
+	require.JSONEq(t, want, ItemToJSON(got))
+
+	in.SetReturnValues("ALL_NEW")
+	in.SetUpdateExpression("REMOVE name, name SET price=:price")
+	in.SetExpressionAttributeValues(Item{":price": {N: strPtr("300")}})
+	out, err = db.UpdateItem(in)
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	want = `{ "id": "1", "price": 300 }`
+	require.JSONEq(t, want, ItemToJSON(out.Attributes))
+
+	out, err = db.UpdateItemWithContext(context.Background(), in)
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	want = `{ "id": "1", "price": 300 }`
+	require.JSONEq(t, want, ItemToJSON(out.Attributes))
+}
+
+func updateInputFixture() *dynamodb.UpdateItemInput {
+	return &dynamodb.UpdateItemInput{
+		TableName:                 strPtr("product"),
+		Key:                       Item{"id": {S: strPtr("1")}},
+		UpdateExpression:          strPtr("SET price=:price"),
+		ExpressionAttributeValues: Item{":price": {N: strPtr("100")}},
+		ReturnValues:              strPtr("ALL_NEW"),
+	}
+}
+
+func TestUpdateItemErr(t *testing.T) {
+	db := ReadTestdataDB(t, "db.json")
+	in := updateInputFixture().SetKey(Item{"BAD_ATTR": {S: strPtr("1")}})
+
+	_, err := db.UpdateItem(in)
+	requireErrIs(t, err, ErrMissingAttribute)
+
+	_, err = db.UpdateItem(nil)
+	requireErrIs(t, err, ErrNil)
+
+	in = updateInputFixture().SetConditionalOperator("OP")
+	_, err = db.UpdateItem(in)
+	requireErrIs(t, err, ErrUnimpl)
+
+	in = updateInputFixture().SetReturnValues("UPDATED_OLD")
+	_, err = db.UpdateItem(in)
+	requireErrIs(t, err, ErrUnimpl)
+
+	in = updateInputFixture().SetTableName("BAD_TABLENAME")
+	_, err = db.UpdateItem(in)
+	requireErrIs(t, err, ErrUnknownTable)
+
+	in = updateInputFixture().SetUpdateExpression("BAD_EXPRESSION")
+	_, err = db.UpdateItem(in)
+	requireErrIs(t, err, ErrInvalidUpdateExpression)
 }
